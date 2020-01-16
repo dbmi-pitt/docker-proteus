@@ -466,7 +466,7 @@ missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NU
                       ) b on a.id = b.id",
                           .con = conn)
   } else if (field == "BIRTH_DATE" | field == "MEASURE_DATE" | field == "PX_DATE" | field == "DISPENSE_DATE"
-             | field == "RESULT_DATE" | field == "RX_ORDER_DATE" | field == "OBSCLIN_DATE" | field == "DISPENSE_SUP"
+             | field == "RESULT_DATE" | field == "RX_ORDER_DATE" | field == "OBSCLIN_DATE" | field == "OBSGEN_DATE" | field == "DISPENSE_SUP"
              | field == "ENR_START_DATE" | field == "ENR_END_DATE" | field == "PRO_DATE" | field == "VX_RECORD_DATE") {
     sql <- glue::glue_sql("
                       SELECT
