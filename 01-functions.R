@@ -35,21 +35,21 @@ data_latency <- function(table, field, test, schema = NULL, backend = NULL, vers
 	  COUNT(*) AS N
 	FROM (
 		SELECT
-			DENSE_RANK() OVER (ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk,
-			ENC_TYPE
-		FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                          ")
+		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk, ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk, "),
+                          "ENC_TYPE
+	  FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") a
 	WHERE rk = 1 AND ENC_TYPE IN ('AV', 'ED', 'EI', 'IP')
 	GROUP BY rk", .con = conn)
   } else {
-  sql <- glue::glue_sql("
+    sql <- glue::glue_sql("
 	SELECT
 	  COUNT(*) AS N
 	FROM (
 		SELECT
-			DENSE_RANK() OVER (ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk
-		FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                        ")
+		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk "),
+                          "FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") a
 	WHERE rk = 1
 	GROUP BY rk", .con = conn)
   }
@@ -65,15 +65,15 @@ FROM (
 	  rk, COUNT(*) AS N
 	FROM (
 		SELECT
-			DENSE_RANK() OVER (ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk,
-			ENC_TYPE
-		FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                          ")
+		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk, ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk, "),
+                          "ENC_TYPE
+	  FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") a
 	WHERE rk BETWEEN 10 AND 21 AND ENC_TYPE IN ('AV', 'ED', 'EI', 'IP')
 	GROUP BY rk
-)", .con = conn)
+) b", .con = conn)
   } else {
-  sql <- glue::glue_sql("
+    sql <- glue::glue_sql("
 SELECT
   AVG(N) AS baseline
 FROM (
@@ -81,12 +81,12 @@ FROM (
 	  rk, COUNT(*) AS N
 	FROM (
 		SELECT
-			DENSE_RANK() OVER (ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk
-		FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                        ")
+		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk "),
+                          "FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") a
 	WHERE rk BETWEEN 10 AND 21
 	GROUP BY rk
-)", .con = conn)
+) b", .con = conn)
   }
   query <- DBI::dbSendQuery(conn, sql)
   denominator <- DBI::dbFetch(query)
