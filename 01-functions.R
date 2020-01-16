@@ -606,15 +606,15 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                FROM (
                  SELECT
                    dx_type AS code_type, dx, ",
-    ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
-           "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END AS exceptn, "),
-           "unexp_alpha, unexp_length, unexp_numeric, unexp_string
+                          ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
+                                 "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END AS exceptn, "),
+                          "unexp_alpha, unexp_length, unexp_numeric, unexp_string
            FROM (
              SELECT
                dx_type, dx,
                CASE WHEN dx_type = '09' AND ", ifelse(backend == "Oracle", "regexp_like(dx, '^[A-DF-UW-Z]{{1}}') THEN 1 ",
                                                       "dx LIKE '[A-DF-UW-Z]%' THEN 1 "),
-              "     ELSE 0
+                          "     ELSE 0
                END AS unexp_alpha,
                CASE WHEN dx_type = '09' AND ", ifelse(backend == "Oracle", "length(replace(dx, '.', '')) ",
                                                       "len(replace(dx, '.', '')) "), "NOT BETWEEN 3 AND 5 THEN 1
@@ -624,23 +624,22 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                END AS unexp_length,
                CASE WHEN dx_type = '10' AND ", ifelse(backend == "Oracle", "regexp_like(dx, '^[0-9]{{1}}') THEN 1",
                                                       "dx LIKE '[0-9]%' THEN 1"),
-              "     ELSE 0
+                          "     ELSE 0
                END as unexp_numeric,
                CASE WHEN dx_type = '09' AND dx IN ('000') THEN 1
                     WHEN dx_type = '10' AND dx IN ('000', '999') THEN 1
                     ELSE 0
                END AS unexp_string
             FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
-          ")
-        )
+                          ") s1
+        ) s2
       GROUP BY code_type
-      ORDER BY records DESC
     ) a
   INNER JOIN (
     SELECT
       dx_type, count(dx) as total
     FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-    "GROUP BY dx_type
+                          "GROUP BY dx_type
   ) b on a.code_type = b.dx_type
   WHERE a.code_type IN ('09', '10')
   ", .con = conn)
@@ -693,13 +692,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
             FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
                           "
            WHERE px_type IN ('CH', '09', '10')
-           )
-        )
+				 ) s1
+			 ) s2
         GROUP BY px_type, px, unexp_alpha, unexp_length, unexp_numeric, unexp_string
-        ORDER BY records DESC
-      )
+      ) s3
       GROUP BY code_type
-      ORDER BY records DESC
     ) a
     INNER JOIN (
     SELECT
@@ -726,17 +723,17 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
              SELECT
                condition_type, condition,
                CASE WHEN condition_type = '09' AND ", ifelse(backend == "Oracle", "regexp_like(condition, '^[A-DF-UW-Z]{{1}}') THEN 1 ",
-                                                      "condition LIKE '[A-DF-UW-Z]%' THEN 1 "),
+                                                             "condition LIKE '[A-DF-UW-Z]%' THEN 1 "),
                           "     ELSE 0
                END AS unexp_alpha,
                CASE WHEN condition_type = '09' AND ", ifelse(backend == "Oracle", "length(replace(condition, '.', '')) ",
-                                                      "len(replace(condition, '.', '')) "), "NOT BETWEEN 3 AND 5 THEN 1
+                                                             "len(replace(condition, '.', '')) "), "NOT BETWEEN 3 AND 5 THEN 1
                     WHEN condition_type = '10' AND ", ifelse(backend == "Oracle", "length(replace(condition, '.', '')) ",
-                                                      "len(replace(condition, '.', '')) "), "NOT BETWEEN 3 AND 7 THEN 1
+                                                             "len(replace(condition, '.', '')) "), "NOT BETWEEN 3 AND 7 THEN 1
                     ELSE 0
                END AS unexp_length,
                CASE WHEN condition_type = '10' AND ", ifelse(backend == "Oracle", "regexp_like(condition, '^[0-9]{{1}}') THEN 1",
-                                                      "condition LIKE '[0-9]%' THEN 1"),
+                                                             "condition LIKE '[0-9]%' THEN 1"),
                           "     ELSE 0
                END as unexp_numeric,
                CASE WHEN condition_type = '09' AND condition IN ('000') THEN 1
@@ -744,10 +741,9 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                     ELSE 0
                END AS unexp_string
             FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
-                          ")
-        )
+                          ") s1
+        ) s2
       GROUP BY code_type
-      ORDER BY records DESC
     ) a
   INNER JOIN (
     SELECT
@@ -760,84 +756,82 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
   }
   if (table == "PRESCRIBING" | table == "PRESCRIBING_STG") {
     sql <- glue::glue_sql("
-      SELECT
-        a.code_type, records, total, 100*round(records/total, 2) as pct
-      FROM (
-      SELECT
-        code_type,
-        sum(exceptn) as records
-      FROM (
-        SELECT
-          rxnorm_cui, 'RX' as code_type, ",
-ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
-       "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END as exceptn, "),
-       "  unexp_alpha, unexp_length, unexp_numeric, unexp_string
-        FROM (
-          SELECT
-            rxnorm_cui,
-            CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(rxnorm_cui, '[a-zA-Z]') THEN 1 ",
-                                "rxnorm_cui LIKE '[a-zA-Z]%' THEN 1 "),
-       "         ELSE 0
-            END AS unexp_alpha,
-            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
-                                "len(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
-       "         ELSE 0
-            END AS unexp_length,
-            0 AS unexp_numeric, 0 as unexp_string
-          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-       "
-       )
-      )
-    GROUP BY code_type
-    ORDER BY records DESC
-    ) a
-    INNER JOIN (
-      SELECT
-        'RX' as code_type, count(rxnorm_cui) as total
-      FROM {`schema`}.{`table`}
-    ) b ON a.code_type = b.code_type
-    ", .con = conn)
-  }
-  if (table == "DISPENSING" | table == "DISPENSING_STG") {
-    sql <- glue::glue_sql("
-      SELECT
-        a.code_type, records, total, 100*round(records/total, 2) as pct
-      FROM (
-      SELECT
-        code_type,
-        sum(exceptn) as records
-      FROM (
-        SELECT
-          ndc, 'NC' as code_type, ",
+		      SELECT
+		        a.code_type, records, total, 100*round(records/total, 2) as pct
+		      FROM (
+		      SELECT
+		        code_type,
+		        sum(exceptn) as records
+		      FROM (
+		        SELECT
+		          rxnorm_cui, 'RX' as code_type, ",
                           ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
                                  "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END as exceptn, "),
                           "  unexp_alpha, unexp_length, unexp_numeric, unexp_string
-        FROM (
-          SELECT
-            ndc,
-            CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(ndc, '[a-zA-Z]') THEN 1 ",
-                                "ndc LIKE '[a-zA-Z]%' THEN 1 "),
+		        FROM (
+		          SELECT
+		            rxnorm_cui,
+		            CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(rxnorm_cui, '[a-zA-Z]') THEN 1 ",
+		                                "rxnorm_cui LIKE '[a-zA-Z]%' THEN 1 "),
                           "         ELSE 0
-            END AS unexp_alpha,
-            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(ndc, '.', '')) != 11 THEN 1",
-                                "len(replace(ndc, '.', '')) != 11 THEN 1 "),
+		            END AS unexp_alpha,
+		            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
+		                                "len(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
                           "         ELSE 0
-            END AS unexp_length,
-            0 AS unexp_numeric,
-            CASE WHEN ndc IN ('00000000000', '99999999999') THEN 1 ELSE 0 END as unexp_string
-          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+		            END AS unexp_length,
+		            0 AS unexp_numeric, 0 as unexp_string
+		          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
                           "
-        )
-      )
-    GROUP BY code_type
-    ORDER BY records DESC
-    ) a
-    INNER JOIN (
-      SELECT
-        'NC' as code_type, count(ndc) as total
-      FROM {`schema`}.{`table`}
-    ) b on a.code_type = b.code_type
-    ", .con = conn)
+				 ) s1
+			 ) s2
+		    GROUP BY code_type
+		    ) a
+		    INNER JOIN (
+		      SELECT
+		        'RX' as code_type, count(rxnorm_cui) as total
+		      FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") b ON a.code_type = b.code_type
+		    ", .con = conn)
+  }
+  if (table == "DISPENSING" | table == "DISPENSING_STG") {
+    sql <- glue::glue_sql("
+		      SELECT
+		        a.code_type, records, total, 100*round(records/total, 2) as pct
+		      FROM (
+		      SELECT
+		        code_type,
+		        sum(exceptn) as records
+		      FROM (
+		        SELECT
+		          ndc, 'NC' as code_type, ",
+                          ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
+                                 "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END as exceptn, "),
+                          "  unexp_alpha, unexp_length, unexp_numeric, unexp_string
+		        FROM (
+		          SELECT
+		            ndc,
+		            CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(ndc, '[a-zA-Z]') THEN 1 ",
+		                                "ndc LIKE '[a-zA-Z]%' THEN 1 "),
+                          "         ELSE 0
+		            END AS unexp_alpha,
+		            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(ndc, '.', '')) != 11 THEN 1",
+		                                "len(replace(ndc, '.', '')) != 11 THEN 1 "),
+                          "         ELSE 0
+		            END AS unexp_length,
+		            '0' AS unexp_numeric,
+		            CASE WHEN ndc IN ('00000000000', '99999999999') THEN 1 ELSE 0 END as unexp_string
+		          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+                          "
+		        ) s1
+		      ) s2
+		    GROUP BY code_type
+		    ) a
+		    INNER JOIN (
+		      SELECT
+		        'NC' as code_type, count(ndc) as total
+		      FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") b on a.code_type = b.code_type
+		    ", .con = conn)
   }
   if (table == "LAB_RESULT_CM" | table == "LAB_RESULT_CM_STG") {
     sql <- glue::glue_sql("
@@ -850,36 +844,35 @@ ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, 
       FROM (
         SELECT
           lab_loinc, 'LC' as code_type, ",
-ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
-         "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END as exceptn, "),
-         "unexp_alpha, unexp_length, unexp_numeric, unexp_string
+                          ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
+                                 "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END as exceptn, "),
+                          "unexp_alpha, unexp_length, unexp_numeric, unexp_string
         FROM (
           SELECT
             lab_loinc,
             CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(lab_loinc, '[a-zA-Z]') THEN 1 ",
                                 "lab_loinc LIKE '[a-zA-Z]%' THEN 1 "),
-       "         ELSE 0
+                          "         ELSE 0
             END AS unexp_alpha,
             CASE WHEN ", ifelse(backend == "Oracle", "length(replace(lab_loinc, '.', '')) NOT BETWEEN 3 AND 7 THEN 1",
                                 "len(replace(lab_loinc, '.', '')) NOT BETWEEN 3 AND 7 THEN 1 "),
-       "         ELSE 0
+                          "         ELSE 0
             END AS unexp_length,
-            0 AS unexp_numeric,
+            '0' AS unexp_numeric,
             CASE WHEN ", ifelse(backend == "Oracle", "length(lab_loinc) - instr(lab_loinc, '-') != 1 THEN 1",
-                                "len(lab_loinc) - instr(lab_loinc, '-') != 1 THEN 1"),
-              "  ELSE 0
+                                "len(lab_loinc) - charindex(lab_loinc, '-') != 1 THEN 1"),
+                          "  ELSE 0
             END as unexp_string
           FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
-        ")
-      )
+                          ") s1
+      ) s2
     GROUP BY code_type
-    ORDER BY records DESC
       ) a
   INNER JOIN (
   SELECT
       'LC' as code_type, count(lab_loinc) as total
   FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-") b on a.code_type = b.code_type
+                          ") b on a.code_type = b.code_type
     ", .con = conn)
   }
   if (table == "IMMUNIZATION" | table == "IMMUNIZATION_STG") {
@@ -897,29 +890,29 @@ ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, 
         FROM (
           SELECT
             vx_code_type, vx_code, ", ifelse(backend == "Oracle",
-                                   "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
-                                   "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END AS exceptn, "),
+                                             "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
+                                             "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END AS exceptn, "),
                           "unexp_alpha, unexp_length, unexp_numeric, unexp_string
           FROM (
             SELECT
               vx_code_type, vx_code,
               CASE
                 WHEN vx_code_type in ('CX', 'RX') AND ", ifelse(backend == "Oracle", "regexp_like(vx_code, '[a-zA-Z]') THEN 1 ",
-                                                  "vx_code LIKE '[a-zA-Z]%' THEN 1 "),
+                                                                "vx_code LIKE '[a-zA-Z]%' THEN 1 "),
                           "    ELSE 0
               END AS unexp_alpha,
               CASE
                 WHEN vx_code_type = 'CH' AND ", ifelse(backend == "Oracle", "length(replace(vx_code, '.', '')) < 5 THEN 1 ",
-                                                  "len(replace(vx_code, '.', '')) < 5 THEN 1 "),
+                                                       "len(replace(vx_code, '.', '')) < 5 THEN 1 "),
                           "    WHEN vx_code_type = 'CX' AND ", ifelse(backend == "Oracle", "length(replace(vx_code, '.', '')) NOT IN (2, 3) THEN 1 ",
-                                                                 "len(replace(vx_code, '.', '')) NOT IN (2, 3) THEN 1 "),
+                                                                      "len(replace(vx_code, '.', '')) NOT IN (2, 3) THEN 1 "),
                           "    WHEN vx_code_type = 'RX' AND ", ifelse(backend == "Oracle", "length(replace(vx_code, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
-                                "len(replace(vx_code, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
+                                                                      "len(replace(vx_code, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
                           "    ELSE 0
               END AS unexp_length,
               CASE
                 WHEN vx_code_type IN ('CX', 'CH', 'RX') AND ", ifelse(backend == "Oracle", "regexp_like(vx_code, '\\d') THEN 0 ",
-                                                                 "vx_code LIKE '%[0-9]%' THEN 0 "),
+                                                                      "vx_code LIKE '%[0-9]%' THEN 0 "),
                           "    ELSE 1
               END AS unexp_numeric,
               CASE
@@ -930,13 +923,11 @@ ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, 
             FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
                           "
            WHERE vx_code_type IN ('CH', 'CX', 'RX')
-           )
-        )
+				 ) s1
+			 ) s2
         GROUP BY vx_code_type, vx_code, unexp_alpha, unexp_length, unexp_numeric, unexp_string
-        ORDER BY records DESC
-      )
+      ) s3
       GROUP BY code_type
-      ORDER BY records DESC
     ) a
     INNER JOIN (
     SELECT
@@ -948,56 +939,55 @@ ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, 
   }
   if (table == "PRESCRIBING" | table == "PRESCRIBING_STG") {
     sql <- glue::glue_sql("
-      SELECT
-        a.code_type, records, total, 100*round(records/total, 2) as pct
-      FROM (
-      SELECT
-        code_type,
-        sum(exceptn) as records
-      FROM (
-        SELECT
-          rxnorm_cui, 'RX' as code_type, ",
+		      SELECT
+		        a.code_type, records, total, 100*round(records/total, 2) as pct
+		      FROM (
+		      SELECT
+		        code_type,
+		        sum(exceptn) as records
+		      FROM (
+		        SELECT
+		          rxnorm_cui, 'RX' as code_type, ",
                           ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
                                  "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END as exceptn, "),
                           "  unexp_alpha, unexp_length, unexp_numeric, unexp_string
-        FROM (
-          SELECT
-            rxnorm_cui,
-            CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(rxnorm_cui, '[a-zA-Z]') THEN 1 ",
-                                "rxnorm_cui LIKE '[a-zA-Z]%' THEN 1 "),
+		        FROM (
+		          SELECT
+		            rxnorm_cui,
+		            CASE WHEN ", ifelse(backend == "Oracle", "regexp_like(rxnorm_cui, '[a-zA-Z]') THEN 1 ",
+		                                "rxnorm_cui LIKE '[a-zA-Z]%' THEN 1 "),
                           "         ELSE 0
-            END AS unexp_alpha,
-            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
-                                "len(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
+		            END AS unexp_alpha,
+		            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
+		                                "len(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
                           "         ELSE 0
-            END AS unexp_length,
-            0 AS unexp_numeric, 0 as unexp_string
-          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		            END AS unexp_length,
+		            '0' AS unexp_numeric, '0' as unexp_string
+		        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
                           "
-       )
-      )
-    GROUP BY code_type
-    ORDER BY records DESC
-    ) a
-    INNER JOIN (
-      SELECT
-        'RX' as code_type, count(rxnorm_cui) as total
-      FROM {`schema`}.{`table`}
-    ) b ON a.code_type = b.code_type
-    ", .con = conn)
+				 ) s1
+			 ) s2
+		    GROUP BY code_type
+		    ) a
+		    INNER JOIN (
+		      SELECT
+		        'RX' as code_type, count(rxnorm_cui) as total
+		      FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          ") b ON a.code_type = b.code_type
+		    ", .con = conn)
   }
   query <- DBI::dbSendQuery(conn, sql)
   result <- DBI::dbFetch(query)
   DBI::dbClearResult(query)
   return(result %>%
-           mutate(text = glue::glue("{PCT}% of {table} type {CODE_TYPE} codes do not conform to the expected length or content."),
+           mutate(text = glue::glue("{pct}% of {table} type {code_type} codes do not conform to the expected length or content."),
                   test = test,
-                  result = as.numeric(PCT),
+                  result = as.numeric(pct),
                   threshold = 5) %>%
            mutate(result = ifelse(result > threshold, "FAIL", "PASS")) %>%
            select(text, test, result) %>%
            as_tibble())
-  }
+}
 
 primary_key_error <- function(table, field, test, schema = NULL, backend = NULL) {
   fields <- unlist(strsplit(field, split=", "))
