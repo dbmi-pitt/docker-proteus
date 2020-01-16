@@ -221,8 +221,8 @@ extreme_values <- function(table, field, test, schema = NULL, backend = NULL, ve
                           )
                           WHERE age NOT BETWEEN 0 and 89",
                           "DEMOGRAPHIC dg
-                           LEFT JOIN DEATH on dg.patid = dh.patid
-                           )
+                           LEFT JOIN DEATH dh on dg.patid = dh.patid
+                           ) a
                           WHERE age NOT BETWEEN 0 and 89"),
                           low = bounds[1], high = bounds[2], .con = conn
                           )
