@@ -1381,10 +1381,10 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
   #' field: name of column to filter over, required if filtered = TRUE
   #' value: name of value to filter in given field, required if filtered = TRUE
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG") {
-    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   # get column info to decide what queries to run
   rs <- DBI::dbSendQuery(conn, paste0("SELECT * FROM ", ifelse(backend=="Oracle", paste0(schema, ".", table), table)))
@@ -1424,7 +1424,7 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     mutate(pct_null = round(as.numeric(nNULL) / as.numeric(cn), 3) * 100,
            pct_dist = round(as.numeric(nd) / as.numeric(cn), 3) * 100,
            pct_missing = round(as.numeric(nNI) / as.numeric(cn), 3) * 100) %>%
-    left_join(., readr::read_csv('./inst/CDM_51_metadata.csv') %>%
+    left_join(., readr::read_csv('/app/inst/CDM_51_metadata.csv') %>%
                 filter(Table == table) %>%
                 select(key, Field:Required),
               by = 'key') %>%
@@ -1432,9 +1432,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     select(-key, -Order) %>%
     select(Field, Required, everything()) %T>%
     purrr::when(filtered == TRUE ~ write.csv(.,
-                                             file = paste0('./summaries/CSV/', table, "_", field, "_", value, '.csv'),
+                                             file = paste0('/app/inst/summaries/CSV/', table, "_", field, "_", value, '.csv'),
                                              row.names = FALSE),
-                ~ write.csv(., file = paste0('./summaries/CSV/', table, '.csv'), row.names = FALSE)
+                ~ write.csv(., file = paste0('/app/inst/summaries/CSV/', table, '.csv'), row.names = FALSE)
     ) %>%
     purrr::when(sum(1*(colinfo$type==6))>0
                 ~ select(., Field, Required, cn, nd, pct_dist, nNULL, pct_null, nNI, pct_missing,
@@ -1454,9 +1454,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
                   )
     ) %>%
     purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(.,
-                                                           paste0(normalizePath('./summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
+                                                           paste0(normalizePath('/app/inst/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
                                                            selfcontained = FALSE),
-                ~ htmlwidgets::saveWidget(., paste0(normalizePath('./summaries/HTML'), '/', table, '.html'),
+                ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/inst/summaries/HTML'), '/', table, '.html'),
                                           selfcontained = FALSE)
     )
 }
