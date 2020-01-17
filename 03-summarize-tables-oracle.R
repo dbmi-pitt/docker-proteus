@@ -19,7 +19,7 @@ cdm_version <- Sys.getenv("cdm_version")
 
 # Declare list of tables to characterize
 table_list <- c("CONDITION", "DEATH", "DEATH_CAUSE", "DEMOGRAPHIC", "DIAGNOSIS",
-                "DISPENSING", "ENCOUNTER", "ENROLLMENT", "MED_ADMIN", "OBS_CLIN",
+                "DISPENSING", "ENCOUNTER", "ENROLLMENT", "LAB_RESULT_CM", "MED_ADMIN", "OBS_CLIN",
                 "OBS_GEN", "PCORNET_TRIAL", "PRESCRIBING", "PROCEDURES", "PRO_CM",
                 "PROVIDER", "VITAL", "IMMUNIZATION")
 
