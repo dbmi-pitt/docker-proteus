@@ -1454,8 +1454,8 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     ) %>%
     purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(., 
                                                            paste0(normalizePath('/app/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
-                                                           selfcontained = TRUE),
+                                                           selfcontained = FALSE),
                 ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/summaries/HTML'), '/', table, '.html'),
-                                          selfcontained = TRUE)
+                                          selfcontained = FALSE)
     )
   }
