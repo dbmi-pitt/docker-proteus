@@ -1432,9 +1432,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     select(-key, -Order) %>%
     select(Field, Required, everything()) %T>%
     purrr::when(filtered == TRUE ~ write.csv(.,
-                                             file = paste0('/app/inst/summaries/CSV/', table, "_", field, "_", value, '.csv'),
+                                             file = paste0('/app/summaries/CSV/', table, "_", field, "_", value, '.csv'),
                                              row.names = FALSE),
-                ~ write.csv(., file = paste0('/app/inst/summaries/CSV/', table, '.csv'), row.names = FALSE)
+                ~ write.csv(., file = paste0('/app/summaries/CSV/', table, '.csv'), row.names = FALSE)
     ) %>%
     purrr::when(sum(1*(colinfo$type==6))>0
                 ~ select(., Field, Required, cn, nd, pct_dist, nNULL, pct_null, nNI, pct_missing,
@@ -1454,9 +1454,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
                   )
     ) %>%
     purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(.,
-                                                           paste0(normalizePath('/app/inst/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
+                                                           paste0(normalizePath('/app/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
                                                            selfcontained = FALSE),
-                ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/inst/summaries/HTML'), '/', table, '.html'),
+                ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/summaries/HTML'), '/', table, '.html'),
                                           selfcontained = FALSE)
     )
 }
