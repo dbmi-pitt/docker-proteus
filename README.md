@@ -32,10 +32,10 @@ $ docker tag pohalloran/proteus proteus
 
 ## Launching proteus
 
-To run the data curation test suite:
+To run the data curation test suite, make sure `summarize=N` in your configuration file and then run:
 
 ```$ docker run -v /full-path-to-config-file:/app/.env /full-path-to-proteus-folder/results:/app/unit_tests/ proteus```
 
-To run CDM table summarizations, first set `export summarize=Y` in your configuration file and then run:
+To run CDM table summarizations, first set `summarize=Y` in your configuration file and then run:
 
 ```$ docker run -v /full-path-to-config-file:/app/.env /full-path-to-proteus-folder/results:/app/summaries/ proteus```
