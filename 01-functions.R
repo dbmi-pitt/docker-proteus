@@ -1397,8 +1397,8 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     rename_at(.vars = vars(contains("_")), .funs = list(~gsub("\\_", "", .))) %>%
     summarize_if(is.character.Date, list(cn = ~ count(), nd = n_distinct, min = min, max = max,
                                          nNULL = ~ sum(case_when(is.na(.) ~ 1, !is.na(.) ~ 0)),
-                                         nNI = ~ sum(case_when(as.character(.) %in% c('NI', 'UN', 'OT') ~ 1, 
-                                                               !(as.character(.) %in% c('NI', 'UN', 'OT')) ~ 0, 
+                                         nNI = ~ sum(case_when(as.character(.) %in% c('NI', 'UN', 'OT') ~ 1,
+                                                               !(as.character(.) %in% c('NI', 'UN', 'OT')) ~ 0,
                                                                is.na(.) ~ 0)))) %>%
     mutate_all(as.character) %>%
     collect() %>%
@@ -1409,7 +1409,7 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
           rename_at(.vars = vars(contains("_")), .funs = list(~gsub("\\_", "", .))) %>%
           select(., -contains("DATE"), -contains("TIME")) %>%
           summarize_if(is.numeric, list(cn = ~ count(), nNULL = ~ sum(case_when(is.na(.) ~ 1, !is.na(.) ~ 0)),
-                                        nd = n_distinct, min = min, avg = mean, max = max)) %>%
+                                        nd = n_distinct, min = min, mean = mean, max = max)) %>%
           collect() %>%
           bind_cols(
             {if(backend == "Oracle") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>% select_if(is.numeric) %>% head(5) %>% collect() %>% names %>%
@@ -1417,8 +1417,8 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
               reduce(cbind)
           ) else tibble() }
     ) %>%
-    gather(var, val) %>% 
-    separate(var, c('key', 'var')) %>% 
+    gather(var, val) %>%
+    separate(var, c('key', 'var')) %>%
     spread(var, val) %>%
     mutate(pct_null = round(as.numeric(nNULL) / as.numeric(cn), 3) * 100,
            pct_dist = round(as.numeric(nd) / as.numeric(cn), 3) * 100,
@@ -1435,9 +1435,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
                                              row.names = FALSE),
                 ~ write.csv(., file = paste0('/app/summaries/CSV/', table, '.csv'), row.names = FALSE)
     ) %>%
-    purrr::when(sum(1*(colinfo$type==6))>0 
+    purrr::when(sum(1*(colinfo$type==6))>0
                 ~ select(., Field, Required, cn, nd, pct_dist, nNULL, pct_null, nNI, pct_missing,
-                         min, p05, p25, median, avg, p75, p95, max) %>%
+                         min, p05, p25, median, mean, p75, p95, max) %>%
                   tibble::column_to_rownames(var = "Field") %>%
                   DT::datatable(options = list(dom = 't', displayLength = -1),
                                 colnames = c("Required", "N", "Distinct N", "Distinct %", "Null N", "Null %",
@@ -1452,10 +1452,10 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
                                              "Missing, NI, UN, or OT N", "Missing, NI, UN, or OT %", "Min", "Max")
                   )
     ) %>%
-    purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(., 
+    purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(.,
                                                            paste0(normalizePath('/app/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
                                                            selfcontained = FALSE),
                 ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/summaries/HTML'), '/', table, '.html'),
                                           selfcontained = FALSE)
     )
-  }
+}
