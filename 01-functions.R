@@ -1,3 +1,12 @@
+### Wrapper functions
+
+run_query <- function(conn, sql) {
+  query <- DBI::dbSendQuery(conn, sql)
+  result <- DBI::dbFetch(query)
+  DBI::dbClearResult(query)
+  return(result)
+}
+
 ### Unit test / data validation functions
 
 check_ucum_api <- function(unit) {
@@ -22,24 +31,36 @@ count_distinct_invalids <- function(table, field, test, schema = NULL, backend =
                                "FROM {`table`}
                                 WHERE {`field`} NOT IN {vals*})"),
                         vals = valueset, .con = conn)
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   return(result)
 }
 
 data_latency <- function(table, field, test, schema = NULL, backend = NULL, version = NULL) {
+  if (backend == "postgres") {
+    table <- tolower(table)
+    field <- tolower(field)
+    schema <- tolower(schema)
+  }
+  if (backend == "mysql") {
+    return(
+      tibble::tibble(
+        text = "MySQL does not support the window function needed to complete this test.",
+        test = test,
+        result = "NA"
+      )
+    )
+  }
   if (test == "DC 3.07") {
     sql <- glue::glue_sql("
 	SELECT
 	  COUNT(*) AS N
 	FROM (
 		SELECT
-		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk, ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk, "),
-                          "ENC_TYPE
-	  FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		  DENSE_RANK() OVER ", ifelse((backend == "Oracle" | backend == "postgres"), "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(month FROM {`field`}) DESC) AS rk, ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk, "),
+                          "enc_type
+	  FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") a
-	WHERE rk = 1 AND ENC_TYPE IN ('AV', 'ED', 'EI', 'IP')
+	WHERE rk = 1 AND enc_type IN ('AV', 'ED', 'EI', 'IP')
 	GROUP BY rk", .con = conn)
   } else {
     sql <- glue::glue_sql("
@@ -47,15 +68,13 @@ data_latency <- function(table, field, test, schema = NULL, backend = NULL, vers
 	  COUNT(*) AS N
 	FROM (
 		SELECT
-		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk "),
-                          "FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		  DENSE_RANK() OVER ", ifelse((backend == "Oracle" | backend == "postgres"), "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(month FROM {`field`}) DESC) AS rk ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk "),
+                          "FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") a
 	WHERE rk = 1
 	GROUP BY rk", .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  numerator <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  numerator <- run_query(conn, sql)
   if (test == "DC 3.07") {
     sql <- glue::glue_sql("
 SELECT
@@ -65,11 +84,11 @@ FROM (
 	  rk, COUNT(*) AS N
 	FROM (
 		SELECT
-		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk, ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk, "),
-                          "ENC_TYPE
-	  FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		  DENSE_RANK() OVER ", ifelse((backend == "Oracle" | backend == "postgres"), "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(month FROM {`field`}) DESC) AS rk, ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk, "),
+                          "enc_type
+	  FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") a
-	WHERE rk BETWEEN 10 AND 21 AND ENC_TYPE IN ('AV', 'ED', 'EI', 'IP')
+	WHERE rk BETWEEN 10 AND 21 AND enc_type IN ('AV', 'ED', 'EI', 'IP')
 	GROUP BY rk
 ) b", .con = conn)
   } else {
@@ -81,16 +100,14 @@ FROM (
 	  rk, COUNT(*) AS N
 	FROM (
 		SELECT
-		  DENSE_RANK() OVER ", ifelse(backend == "Oracle", "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(MONTH FROM {`field`}) DESC) AS rk ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk "),
-                          "FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		  DENSE_RANK() OVER ", ifelse((backend == "Oracle" | backend == "postgres"), "(ORDER BY EXTRACT(year from {`field`}) * 100 + EXTRACT(month FROM {`field`}) DESC) AS rk ", "(ORDER BY YEAR({`field`}) * 100 + MONTH({`field`}) DESC) AS rk "),
+                          "FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") a
 	WHERE rk BETWEEN 10 AND 21
 	GROUP BY rk
 ) b", .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  denominator <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  denominator <- run_query(conn, sql)
   result <- round(100 * numerator / denominator, 2)
   threshold <- 75
   pass <- ifelse(result < threshold, "FAIL", "PASS")
@@ -102,34 +119,36 @@ FROM (
   )
 }
 
-record_duplication <- function(table, field, test, schema = NULL, backend = NULL) {
+record_duplication <- function(table, field, test, unit, schema = NULL, backend = NULL) {
+  if (backend == "postgres") {
+    table <- tolower(table)
+    field <- tolower(field)
+    schema <- tolower(schema)
+    unit <- tolower(unit)
+  }
   sql <- glue::glue_sql("
                         SELECT
                           COUNT(*)
                         FROM (
                           SELECT
                             {`field`}
-                          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                          FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                        "
                         GROUP BY {`field`}
-                        HAVING COUNT(DISTINCT PATID) > 1
+                        HAVING COUNT(DISTINCT {unit}) > 1
                         ) a
                         ", .con = conn)
-  query <- DBI::dbSendQuery(conn, sql)
-  numerator <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  numerator <- run_query(conn, sql)
   sql <- glue::glue_sql("
                         SELECT
                           COUNT(DISTINCT {`field`})
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                         .con = conn)
-  query <- DBI::dbSendQuery(conn, sql)
-  denominator <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  denominator <- run_query(conn, sql)
   result <- round(100 * numerator / denominator, 2)
   threshold <- 5
   pass <- ifelse(result > threshold, "FAIL", "PASS")
-  txt <- glue::glue("{result} percent of {field}s are associated with more than 1 PATID in {table}.")
+  txt <- glue::glue("{result} percent of {field}s are associated with more than 1 {unit} in {table}.")
   return(tibble::tibble(text = txt,
                         test = test,
                         result = as.character(pass)
@@ -138,71 +157,110 @@ record_duplication <- function(table, field, test, schema = NULL, backend = NULL
 }
 
 events_per_encounter <- function(table, field, vals, desc, test, schema = NULL, backend = NULL) {
-  n_field <- glue::glue("N_", field)
-  field_type <- glue::glue(field, "_TYPE")
+  n_field <- glue::glue("n_", tolower(field))
+  field_type <- glue::glue(tolower(field), "_type")
+  table <- tolower(table)
+  if (backend == "mysql") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            a.enc_type, a.{`n_field`}, b.n_enc, (a.{`n_field`} / b.n_enc) as ratio
+                          FROM (
+                            SELECT
+                              enc_type, COUNT(*) as {`n_field`}
+                            FROM {`toupper(table)`}
+                            WHERE {`field_type`} IN ({vals*})
+                            GROUP BY enc_type) a
+                          LEFT OUTER JOIN (
+                            SELECT 
+                              enc_type, COUNT(*) as n_enc 
+                            FROM ENCOUNTER 
+                            GROUP BY enc_type
+                          ) b
+                          ON a.enc_type = b.enc_type
+                          UNION
+                          SELECT
+                            a.enc_type, a.{`n_field`}, b.n_enc, (a.{`n_field`} / b.n_enc) as ratio
+                          FROM (
+                            SELECT
+                              enc_type, COUNT(*) as {`n_field`}
+                            FROM {`toupper(table)`}
+                            WHERE {`field_type`} IN ({vals*})
+                            GROUP BY enc_type) a
+                          RIGHT OUTER JOIN (
+                            SELECT 
+                              enc_type, COUNT(*) as n_enc 
+                            FROM ENCOUNTER 
+                            GROUP BY enc_type
+                          ) b
+                          ON a.enc_type = b.enc_type
+                          ", .con = conn, vals = vals)
+  } else {
   sql <- glue::glue_sql("
-                        SELECT a.ENC_TYPE, a.{`n_field`}, b.N_ENC, (a.{`n_field`} / b.N_ENC) as RATIO FROM
-                        (SELECT ENC_TYPE, COUNT(*) as {`n_field`} ",
-                        ifelse(backend == "Oracle",
+                        SELECT a.enc_type, a.{`n_field`}, b.n_enc, (a.{`n_field`} / b.n_enc) as ratio FROM
+                        (SELECT enc_type, COUNT(*) as {`n_field`} ",
+                        ifelse((backend == "Oracle" | backend == "postgres"),
                                "FROM {`schema`}.{`table`} ",
                                "FROM {`table`} "),
                         "WHERE {`field_type`} IN ({vals*})
-                        GROUP BY ENC_TYPE) a
+                        GROUP BY enc_type) a
                         FULL OUTER JOIN (
-                        SELECT ENC_TYPE, COUNT(*) as N_ENC ",
-                        ifelse(backend == "Oracle",
-                               "FROM {`schema`}.ENCOUNTER ",
+                        SELECT enc_type, COUNT(*) as n_enc ",
+                        ifelse((backend == "Oracle" | backend == "postgres"),
+                               "FROM {`schema`}.encounter ",
                                "FROM ENCOUNTER "),
-                        "GROUP BY ENC_TYPE) b
-                        ON a.ENC_TYPE = b.ENC_TYPE",
+                        "GROUP BY enc_type) b
+                        ON a.enc_type = b.enc_type",
                         vals = vals, .con = conn)
-
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  }
+  result <- run_query(conn, sql)
   if (test == "DC 3.01") {
     thresholds <- tibble::tibble(
-      ENC_TYPE = c("AV", "ED", "IP", "EI"),
+      enc_type = c("AV", "ED", "IP", "EI"),
       threshold = c(1.0, 1.0, 1.0, 1.0)
     )
   } else {
     thresholds <- tibble::tibble(
-      ENC_TYPE = c("AV", "ED", "IP", "EI"),
+      enc_type = c("AV", "ED", "IP", "EI"),
       threshold = c(0.75, 0.75, 1.0, 1.0)
     )
   }
   return(result %>%
-           filter(!is.na(ENC_TYPE), ENC_TYPE %in% c('AV', 'ED', 'IP', 'EI')) %>%
-           mutate(RATIO = round(RATIO, 2),
-                  text = glue::glue("Encounter type {ENC_TYPE} has {RATIO} {desc} per encounter."),
+           filter(!is.na(enc_type), enc_type %in% c('AV', 'ED', 'IP', 'EI')) %>%
+           mutate(ratio = round(ratio, 2),
+                  text = glue::glue("Encounter type {enc_type} has {ratio} {desc} per encounter."),
                   test = test) %>%
-           left_join(., thresholds, by = "ENC_TYPE") %>%
-           mutate(result = ifelse(RATIO < threshold, "FAIL", "PASS")) %>%
+           left_join(., thresholds, by = "enc_type") %>%
+           mutate(result = ifelse(ratio < threshold, "FAIL", "PASS")) %>%
            select(text, test, result) %>%
            as_tibble())
 }
 
 extreme_values <- function(table, field, test, schema = NULL, backend = NULL, version = NULL) {
-  if (field == "AGE") {
+  if (backend == "postgres") {
+    table <- tolower(table)
+    field <- tolower(field)
+    schema <- tolower(schema)
+  }
+  if (toupper(field) == "AGE") {
     bounds <- c("0", "89")
   }
-  if (field == "DISPENSE_SUP") {
+  if (toupper(field) == "DISPENSE_SUP") {
     bounds <- c("1", "90")
   }
-  if (field == "SYSTOLIC") {
+  if (toupper(field) == "SYSTOLIC") {
     bounds <- c("40", "210")
   }
-  if (field == "DIASTOLIC") {
+  if (toupper(field) == "DIASTOLIC") {
     bounds <- c("40", "120")
   }
-  if (field == "HT") {
+  if (toupper(field) == "HT") {
     bounds <- c("0", "94")
   }
-  if (field == "WT") {
+  if (toupper(field) == "WT") {
     bounds <- c("0", "350")
   }
 
-  if (field=="AGE") {
+  if (toupper(field)=="AGE") {
     sql <- glue::glue_sql("
                           SELECT
                             COUNT(*)
@@ -211,46 +269,47 @@ extreme_values <- function(table, field, test, schema = NULL, backend = NULL, ve
                               CASE
                                 WHEN death_date IS NULL THEN ",
                                 ifelse(backend == "Oracle", "(SYSDATE - birth_date)/365
-                                ELSE (death_date - birth_date)/365",
+                                ELSE (death_date - birth_date)/365 ",
+                                ifelse(backend == "mysql", "DATEDIFF(current_date, birth_date)/365
+                                ELSE DATEDIFF(death_date, birth_date)/365 ",
+                                ifelse(backend == "postgres", "(current_date - birth_date)/365
+                                ELSE (death_date - birth_date)/365 ",
                                 "DATEDIFF(year, birth_date, convert(date, GETDATE()))
-                                ELSE DATEDIFF(year, birth_date, death_date)"),
-                              "END AS age
+                                ELSE DATEDIFF(year, birth_date, death_date) "))),
+                              "
+                              END AS age
                             FROM ",
-                          ifelse(backend == "Oracle", "{`schema`}.DEMOGRAPHIC dg
-                          LEFT JOIN {`schema`}.DEATH dh ON dg.patid = dh.patid
-                          )
+                          ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.demographic dg
+                          LEFT JOIN {`schema`}.death dh ON dg.patid = dh.patid
+                          ) a
                           WHERE age NOT BETWEEN 0 and 89",
                           "DEMOGRAPHIC dg
                            LEFT JOIN DEATH dh on dg.patid = dh.patid
                            ) a
                           WHERE age NOT BETWEEN 0 and 89"),
-                          low = bounds[1], high = bounds[2], .con = conn
-                          )
+                          low = bounds[1], high = bounds[2], .con = conn)
   } else {
     sql <- glue::glue_sql("
                         SELECT COUNT(*) FROM ",
-                          ifelse(backend == "Oracle", "{`schema`}.{`table`} ",
+                          ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ",
                                  "{`table`} "),
                           "WHERE {`field`} NOT BETWEEN {low} AND {high}",
                           low = bounds[1], high = bounds[2], .con = conn)
   }
-
-  query <- DBI::dbSendQuery(conn, sql)
-  num <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
-  if (field == "HT" | field == "WT" | field == "DIASTOLIC" | field == "SYSTOLIC") {
+  
+  num <- run_query(conn, sql)
+  
+  if (toupper(field) %in% c("HT", "WT", "DIASTOLIC", "SYSTOLIC")) {
     sql <- glue::glue("SELECT
                       COUNT({`field`})
-                     FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`}"), .con = conn)
+                     FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`}"), .con = conn)
 
   } else {
     sql <- glue::glue("SELECT
                       COUNT(*)
-                     FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`}"), .con = conn)
+                     FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`}"), .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  denom <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  denom <- run_query(conn, sql)
   result <- round(100 * num / denom, 2)
   threshold <- 10
   pass <- ifelse(result > threshold, "FAIL", "PASS")
@@ -264,10 +323,10 @@ extreme_values <- function(table, field, test, schema = NULL, backend = NULL, ve
 
 field_conformance <- function(test, schema = NULL, backend = NULL, version = NULL) {
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
-    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {
     sql <- glue::glue_sql("
@@ -277,9 +336,7 @@ field_conformance <- function(test, schema = NULL, backend = NULL, version = NUL
                       WHERE owner = {schema}
                       ORDER BY table_name, column_id asc
                       ", .con = conn)
-    query <- DBI::dbSendQuery(conn, sql)
-    result <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+    result <- run_query(conn, sql)
 
     dtypes <- metadata %>%
       anti_join(., result, by = c("Table" = "TABLE_NAME", "Field" = "COLUMN_NAME", "Oracle_dtype" = "DATA_TYPE")) %>%
@@ -295,12 +352,41 @@ field_conformance <- function(test, schema = NULL, backend = NULL, version = NUL
                           FROM information_schema.columns
                           WHERE table_schema = 'dbo'
                           ", .con = conn)
-    query <- DBI::dbSendQuery(conn, sql)
-    result <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+    result <- run_query(conn, sql)
 
     dtypes <- metadata %>%
       anti_join(., result, by = c("Table" = "TABLE_NAME", "Field" = "COLUMN_NAME", "mssql_dtype" = "DATA_TYPE")) %>%
+      mutate(text = glue::glue("{Field} does not conform to data model specification for data type."),
+             test = test,
+             result = ifelse(!is.na(text), "FAIL", "PASS")) %>%
+      arrange(Table) %>%
+      select(text, test, result)
+  } else if (backend == "postgres") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            upper(table_name) as table_name, upper(column_name) as column_name, udt_name, ordinal_position, character_maximum_length as data_length
+                          FROM information_schema.columns
+                          WHERE table_schema = {schema}
+                          ", .con = conn)
+    result <- run_query(conn, sql)
+    result <- result %>% rename_all(toupper)
+    dtypes <- metadata %>%
+      anti_join(., result, by = c("Table" = "TABLE_NAME", "Field" = "COLUMN_NAME", "postgres_dtype" = "UDT_NAME")) %>%
+      mutate(text = glue::glue("{Field} does not conform to data model specification for data type."),
+             test = test,
+             result = ifelse(!is.na(text), "FAIL", "PASS")) %>%
+      arrange(Table) %>%
+      select(text, test, result)
+  } else if (backend == "mysql") {
+    sql <- glue::glue_sql("
+                     SELECT
+                       TABLE_NAME, COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH AS DATA_LENGTH
+                     FROM information_schema.columns
+                     WHERE table_schema = {schema}
+                     ", .con = conn)
+    result <- run_query(conn, sql)
+    dtypes <- metadata %>%
+      anti_join(., result, by = c("Table" = "TABLE_NAME", "Field" = "COLUMN_NAME", "mysql_dtype" = "DATA_TYPE")) %>%
       mutate(text = glue::glue("{Field} does not conform to data model specification for data type."),
              test = test,
              result = ifelse(!is.na(text), "FAIL", "PASS")) %>%
@@ -334,16 +420,16 @@ field_conformance <- function(test, schema = NULL, backend = NULL, version = NUL
 
 get_valueset <- function(table, field, version = NULL) {
   if(version == "3.1") {
-    parseable <- readr::read_csv('/app/inst/CDM_31_parseable.csv')
+    parseable <- readr::read_csv('./inst/CDM_31_parseable.csv')
   }
   if(version == "4.1") {
-    parseable <- readr::read_csv('/app/inst/CDM_41_parseable.csv')
+    parseable <- readr::read_csv('./inst/CDM_41_parseable.csv')
   }
   if(version == "4.1_STG") {
-    parseable <- readr::read_csv('/app/inst/staging_parseable.csv')
+    parseable <- readr::read_csv('./inst/staging_parseable.csv')
   }
   if(version == "5.1" | version == "5.1_STG") {
-    parseable <- readr::read_csv('/app/inst/CDM_51_parseable.csv')
+    parseable <- readr::read_csv('./inst/CDM_51_parseable.csv')
   }
   return(parseable %>%
            filter(TABLE_NAME == table & FIELD_NAME == field) %>%
@@ -353,11 +439,17 @@ get_valueset <- function(table, field, version = NULL) {
 
 
 orphans <- function(child, parent, key, test, schema = NULL, backend = NULL, version = NULL) {
+  if (backend == "postgres") {
+    child <- tolower(child)
+    parent <- tolower(parent)
+    key <- tolower(key)
+    schema <- tolower(schema)
+  }
   if (version == "4.1_STG" | version == "5.1_STG" | version == "5.1_HP_STG") {
     full_table <- stringr::str_replace(parent, "_STG", "")
     sql <- glue::glue_sql("
                         SELECT COUNT(DISTINCT {`key`}) FROM ",
-                          ifelse(backend == "Oracle", "{`schema`}.{`child`} c
+                          ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`child`} c
                                WHERE NOT EXISTS (SELECT {`key`} FROM
                                                  (SELECT {`key`} FROM {`schema`}.{`parent`}
                                                   UNION
@@ -373,18 +465,19 @@ orphans <- function(child, parent, key, test, schema = NULL, backend = NULL, ver
   }
 
   if (test == "DC 1.12") {
+    pk <- 'providerid'
     sql <- glue::glue_sql("
                         SELECT COUNT(DISTINCT {`key`}) FROM ",
-                          ifelse(backend == "Oracle", "{`schema`}.{`child`} c
-                               WHERE NOT EXISTS (SELECT PROVIDERID FROM {`schema`}.{`parent`} p ",
+                          ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`child`} c
+                               WHERE NOT EXISTS (SELECT 1 FROM {`schema`}.{`parent`} p ",
                                  "{`child`} c
-                               WHERE NOT EXISTS (SELECT PROVIDERID FROM {`parent`} p "),
-                          "WHERE p.PROVIDERID = c.{`key`})",
+                               WHERE NOT EXISTS (SELECT 1 FROM {`parent`} p "),
+                          "WHERE p.{`pk`} = c.{`key`})",
                           .con = conn)
   } else {
   sql <- glue::glue_sql("
                         SELECT COUNT(DISTINCT {`key`}) FROM ",
-                        ifelse(backend == "Oracle", "{`schema`}.{`child`} c
+                        ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`child`} c
                                WHERE NOT EXISTS (SELECT {`key`} FROM {`schema`}.{`parent`} p ",
                                "{`child`} c
                                WHERE NOT EXISTS (SELECT {`key`} FROM {`parent`} p "),
@@ -392,14 +485,10 @@ orphans <- function(child, parent, key, test, schema = NULL, backend = NULL, ver
                         .con = conn)
   }
   if (test == "DC 1.09") {
-    query <- DBI::dbSendQuery(conn, sql)
-    numerator <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+    numerator <- run_query(conn, sql)
     sql <- glue::glue_sql("SELECT COUNT(DISTINCT {`key`}) FROM ",
-                          ifelse(backend == "Oracle", "{`schema`}.{`child`} ", "{`child`}"), .con = conn)
-    query <- DBI::dbSendQuery(conn, sql)
-    denominator <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+                          ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`child`} ", "{`child`}"), .con = conn)
+    denominator <- run_query(conn, sql)
     result <- round(100 * numerator / denominator, 2)
     txt <- glue::glue("{result} percent of {child} records have orphan {key}s.")
     return(tibble::tibble(text = txt,
@@ -411,9 +500,7 @@ orphans <- function(child, parent, key, test, schema = NULL, backend = NULL, ver
       select(text, test, result)
     )
   } else {
-    query <- DBI::dbSendQuery(conn, sql)
-    result <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+    result <- run_query(conn, sql)
     txt <- glue::glue("Table {child} has {result} orphan {key}s.")
     return(tibble::tibble(text = txt,
                           test = test,
@@ -427,7 +514,12 @@ orphans <- function(child, parent, key, test, schema = NULL, backend = NULL, ver
 }
 
 missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NULL, backend = NULL) {
-  if (field == "DISCHARGE_DISPOSITION") {
+  if (backend == "postgres") {
+    table <- tolower(table)
+    field <- tolower(field)
+    schema <- tolower(schema)
+  }
+  if (toupper(field) == "DISCHARGE_DISPOSITION") {
     sql <- glue::glue_sql("
                       SELECT
                         CASE WHEN b.denom != 0 THEN ROUND(100 * a.num / b.denom, 2)
@@ -436,17 +528,17 @@ missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NU
                       FROM (
                         SELECT
                           COUNT(*) as num, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                          "WHERE ({`field`} IN ('NI', 'OT', 'UN') OR {`field`} IS NULL) AND ENC_TYPE IN ('IP', 'EI')
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
+                          "WHERE ({`field`} IN ('NI', 'OT', 'UN') OR {`field`} IS NULL) AND enc_type IN ('IP', 'EI')
                       ) a
                       LEFT JOIN (
                         SELECT
                           COUNT(*) as denom, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                          "WHERE ENC_TYPE IN ('IP', 'EI')
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
+                          "WHERE enc_type IN ('IP', 'EI')
                       ) b on a.id = b.id",
                           .con = conn)
-  } else if (field == "ADMIT_DATE" | field == "DISCHARGE_DATE") {
+  } else if (toupper(field) %in% c("ADMIT_DATE", "DISCHARGE_DATE")) {
     sql <- glue::glue_sql("
                       SELECT
                         CASE WHEN b.denom != 0 THEN ROUND(100 * a.num / b.denom, 2)
@@ -455,19 +547,19 @@ missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NU
                       FROM (
                         SELECT
                           COUNT(*) as num, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "WHERE {`field`} IS NULL AND ENC_TYPE IN ('IP', 'EI')
                       ) a
                       LEFT JOIN (
                         SELECT
                           COUNT(*) as denom, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "WHERE ENC_TYPE IN ('IP', 'EI')
                       ) b on a.id = b.id",
                           .con = conn)
-  } else if (field == "BIRTH_DATE" | field == "MEASURE_DATE" | field == "PX_DATE" | field == "DISPENSE_DATE"
-             | field == "RESULT_DATE" | field == "RX_ORDER_DATE" | field == "OBSCLIN_DATE" | field == "OBSGEN_DATE" | field == "DISPENSE_SUP"
-             | field == "ENR_START_DATE" | field == "ENR_END_DATE" | field == "PRO_DATE" | field == "VX_RECORD_DATE") {
+  } else if (toupper(field) %in% c("BIRTH_DATE", "MEASURE_DATE", "PX_DATE", "DISPENSE_DATE", 
+                                   "RESULT_DATE", "RX_ORDER_DATE", "OBSCLIN_DATE", "OBSGEN_DATE", 
+                                   "DISPENSE_SUP", "ENR_START_DATE", "ENR_END_DATE", "PRO_DATE", "VX_RECORD_DATE")) {
     sql <- glue::glue_sql("
                       SELECT
                         CASE WHEN b.denom != 0 THEN ROUND(100 * a.num / b.denom, 2)
@@ -476,13 +568,13 @@ missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NU
                       FROM (
                         SELECT
                           COUNT(*) as num, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "WHERE {`field`} IS NULL
                       ) a
                       LEFT JOIN (
                         SELECT
                           COUNT(*) as denom, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") b on a.id = b.id",
                           .con = conn)
   } else {
@@ -494,19 +586,17 @@ missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NU
                       FROM (
                         SELECT
                           COUNT(*) as num, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "WHERE ({`field`} IN ('NI', 'OT', 'UN') OR {`field`} IS NULL)
                       ) a
                       LEFT JOIN (
                         SELECT
                           COUNT(*) as denom, 1 as id
-                        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+                        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") b on a.id = b.id",
                           .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   pass <- ifelse(result > threshold, "FAIL", "PASS")
   txt <- glue::glue("{result} percent of {field} records in {table} are missing or unknown.")
   return(tibble::tibble(text = txt,
@@ -517,6 +607,11 @@ missing_or_unknown <- function(table, field, test, threshold = NULL, schema = NU
 }
 
 normal_range_specification <- function(table, field, test, schema = NULL, backend = NULL) {
+  if (backend == "postgres") {
+    table <- tolower(table)
+    field <- tolower(field)
+    schema <- tolower(schema)
+  }
   sql <- glue::glue_sql("
                         SELECT
                           CASE WHEN b.denom != 0 THEN ROUND(100 * a.num / b.denom, 2)
@@ -525,23 +620,21 @@ normal_range_specification <- function(table, field, test, schema = NULL, backen
                         FROM (
                           SELECT
                           	COUNT(*) AS num, 1 AS id
-                        	FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                                                "WHERE LAB_LOINC IS NOT NULL
-                        	AND RESULT_NUM IS NOT NULL
-                        	AND NORM_RANGE_LOW IS NOT NULL
-                        	AND NORM_RANGE_HIGH IS NOT NULL
-                        	AND NORM_MODIFIER_LOW IS NOT NULL
-                        	AND NORM_MODIFIER_HIGH IS NOT NULL) a
+                        	FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
+                                                "WHERE lab_loinc IS NOT NULL
+                        	AND result_num IS NOT NULL
+                        	AND norm_range_low IS NOT NULL
+                        	AND norm_range_high IS NOT NULL
+                        	AND norm_modifier_low IS NOT NULL
+                        	AND norm_modifier_high IS NOT NULL) a
                       	LEFT JOIN (
                       		SELECT
                       	  	COUNT(*) AS denom, 1 AS id
-                      		FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
-                         "WHERE LAB_LOINC IS NOT NULL AND RESULT_NUM IS NOT NULL
+                      		FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
+                         "WHERE lab_loinc IS NOT NULL AND result_num IS NOT NULL
                       	) b ON a.id = b.id",
    .con = conn)
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   threshold <- 80
   pass <- ifelse(result < threshold, "FAIL", "PASS")
   txt <- glue::glue("{result} percent of quantitative results for tests mapped to LAB_LOINC in {table} fully specify the normal range.")
@@ -553,37 +646,36 @@ normal_range_specification <- function(table, field, test, schema = NULL, backen
 }
 
 patients_per_encounter <- function(table, field, test, schema = NULL, backend = NULL, version = NULL) {
-  n_field <- glue::glue("N_", field)
+  table <- tolower(table)
+  n_field <- glue::glue("n_", tolower(field))
   if (version == "4.1_STG" | version == "5.1_STG" | version == "5.1_HP_STG") {
-  sql <- glue::glue_sql("SELECT 100 * ROUND(({`n_field`} / N_ENC), 3) as RATIO FROM
-                        (SELECT COUNT(DISTINCT PATID) as {`n_field`}, 1 as id ",
-                          ifelse(backend == "Oracle",
+  sql <- glue::glue_sql("SELECT 100 * ROUND(({`n_field`} / n_enc), 3) as ratio FROM
+                        (SELECT COUNT(DISTINCT patid) as {`n_field`}, 1 as id ",
+                          ifelse((backend == "Oracle" | backend == "postgres"),
                                  "FROM {`schema`}.{`table`}) a ",
-                                 "FROM {`table`}) a "),
+                                 "FROM {`toupper(table)`}) a "),
                           "LEFT JOIN
-                        (SELECT COUNT(DISTINCT PATID) as N_ENC, 1 as id ",
-                          ifelse(backend == "Oracle",
-                                 "FROM {`schema`}.ENCOUNTER_STG) b ",
+                        (SELECT COUNT(DISTINCT patid) as n_enc, 1 as id ",
+                          ifelse((backend == "Oracle" | backend == "postgres"),
+                                 "FROM {`schema`}.encounter_stg) b ",
                                  "FROM ENCOUNTER_STG) b "),
                           "ON a.id = b.id",
                           .con = conn)
   } else {
-   sql <- glue::glue_sql("SELECT 100 * ROUND(({`n_field`} / N_ENC), 3) as RATIO FROM
-                        (SELECT COUNT(DISTINCT PATID) as {`n_field`}, 1 as id ",
-                        ifelse(backend == "Oracle",
+   sql <- glue::glue_sql("SELECT 100 * ROUND(({`n_field`} / n_enc), 3) as ratio FROM
+                        (SELECT COUNT(DISTINCT patid) as {`n_field`}, 1 as id ",
+                        ifelse((backend == "Oracle" | backend == "postgres"),
                                "FROM {`schema`}.{`table`}) a ",
-                               "FROM {`table`}) a "),
+                               "FROM {`toupper(table)`}) a "),
                         "LEFT JOIN
-                        (SELECT COUNT(DISTINCT PATID) as N_ENC, 1 as id ",
-                        ifelse(backend == "Oracle",
-                               "FROM {`schema`}.ENCOUNTER) b ",
+                        (SELECT COUNT(DISTINCT patid) as n_enc, 1 as id ",
+                        ifelse((backend == "Oracle" | backend == "postgres"),
+                               "FROM {`schema`}.encounter) b ",
                                "FROM ENCOUNTER) b "),
                         "ON a.id = b.id",
                         .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   txt = glue::glue("{result}% of patients with encounters have {field} records.")
   return(tibble::tibble(text = txt,
                         test = test,
@@ -596,7 +688,11 @@ patients_per_encounter <- function(table, field, test, schema = NULL, backend = 
 }
 
 potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
-  if (table == "DIAGNOSIS" | table == "DIAGNOSIS_STG") {
+  if (backend == "postgres") {
+    table <- tolower(table)
+    schema <- tolower(schema)
+  }
+  if (toupper(table) == "DIAGNOSIS" | toupper(table) == "DIAGNOSIS_STG") {
     sql <- glue::glue_sql("
              SELECT
                a.code_type, records, total, round(100*records/total, 2) AS pct
@@ -616,9 +712,9 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                                                       "dx LIKE '[A-DF-UW-Z]%' THEN 1 "),
                           "     ELSE 0
                END AS unexp_alpha,
-               CASE WHEN dx_type = '09' AND ", ifelse(backend == "Oracle", "length(replace(dx, '.', '')) ",
+               CASE WHEN dx_type = '09' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(dx, '.', '')) ",
                                                       "len(replace(dx, '.', '')) "), "NOT BETWEEN 3 AND 5 THEN 1
-                    WHEN dx_type = '10' AND ", ifelse(backend == "Oracle", "length(replace(dx, '.', '')) ",
+                    WHEN dx_type = '10' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(dx, '.', '')) ",
                                                       "len(replace(dx, '.', '')) "), "NOT BETWEEN 3 AND 7 THEN 1
                     ELSE 0
                END AS unexp_length,
@@ -630,7 +726,7 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                     WHEN dx_type = '10' AND dx IN ('000', '999') THEN 1
                     ELSE 0
                END AS unexp_string
-            FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+            FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                           ") s1
         ) s2
       GROUP BY code_type
@@ -638,13 +734,13 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
   INNER JOIN (
     SELECT
       dx_type, count(dx) as total
-    FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+    FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "GROUP BY dx_type
   ) b on a.code_type = b.dx_type
   WHERE a.code_type IN ('09', '10')
   ", .con = conn)
   }
-  if (table == "PROCEDURES" | table == "PROCEDURES_STG") {
+  if (toupper(table) == "PROCEDURES" | toupper(table) == "PROCEDURES_STG") {
     sql <- glue::glue_sql("
       SELECT
         a.code_type, records, total, round(100*records/total, 2) AS pct
@@ -671,11 +767,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                           "    ELSE 0
               END AS unexp_alpha,
               CASE
-                WHEN px_type = 'CH' AND ", ifelse(backend == "Oracle", "length(replace(px, '.', '')) < 5 THEN 1 ",
+                WHEN px_type = 'CH' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(px, '.', '')) < 5 THEN 1 ",
                                                   "len(replace(px, '.', '')) < 5 THEN 1 "),
-                          "    WHEN px_type = '09' AND ", ifelse(backend == "Oracle", "length(replace(px, '.', '')) NOT IN (3, 4) THEN 1 ",
+                          "    WHEN px_type = '09' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(px, '.', '')) NOT IN (3, 4) THEN 1 ",
                                                                  "len(replace(px, '.', '')) NOT IN (3, 4) THEN 1 "),
-                          "    WHEN px_type = '10' AND ", ifelse(backend == "Oracle", "length(replace(px, '.', '')) != 7 THEN 1 ",
+                          "    WHEN px_type = '10' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(px, '.', '')) != 7 THEN 1 ",
                                                                  "len(replace(px, '.', '')) != 7 THEN 1 "),
                           "    ELSE 0
               END AS unexp_length,
@@ -689,7 +785,7 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                 WHEN px_type = '10' AND px IN ('0000000', '9999999') THEN 1
                 ELSE 0
               END AS unexp_string
-            FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+            FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                           "
            WHERE px_type IN ('CH', '09', '10')
 				 ) s1
@@ -701,12 +797,12 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
     INNER JOIN (
     SELECT
       px_type, count(px) as total
-    FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+    FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "GROUP BY px_type
     ) b on a.code_type = b.px_type
     ", .con = conn)
   }
-  if (table == "CONDITION" | table == "CONDITION_STG") {
+  if (toupper(table) == "CONDITION" | toupper(table) == "CONDITION_STG") {
     sql <- glue::glue_sql("
              SELECT
                code_type, records, total, round(100*records/total, 2) AS pct
@@ -715,46 +811,49 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                  code_type, sum(exceptn) AS records
                FROM (
                  SELECT
-                   condition_type AS code_type, condition, ",
+                   condition_type AS code_type, ", ifelse(backend == "mysql", "`condition`, ", "condition, "), 
                           ifelse(backend == "Oracle", "greatest(unexp_alpha, unexp_length, unexp_numeric, unexp_string) AS exceptn, ",
                                  "CASE WHEN unexp_alpha + unexp_length + unexp_numeric + unexp_string > 1 THEN 1 ELSE 0 END AS exceptn, "),
                           "unexp_alpha, unexp_length, unexp_numeric, unexp_string
            FROM (
              SELECT
-               condition_type, condition,
-               CASE WHEN condition_type = '09' AND ", ifelse(backend == "Oracle", "regexp_like(condition, '^[A-DF-UW-Z]{{1}}') THEN 1 ",
-                                                             "condition LIKE '[A-DF-UW-Z]%' THEN 1 "),
+             condition_type, ", ifelse(backend == "mysql", "`condition`, ", "condition, "),
+                          "CASE WHEN condition_type = '09' AND ", ifelse(backend == "Oracle", "regexp_like(condition, '^[A-DF-UW-Z]{{1}}') THEN 1 ",
+                                                                         ifelse(backend == "mysql", "`condition` LIKE '[A-DF-UW-Z]%' THEN 1 ", "condition LIKE '[A-DF-UW-Z]%' THEN 1 ")),
                           "     ELSE 0
                END AS unexp_alpha,
-               CASE WHEN condition_type = '09' AND ", ifelse(backend == "Oracle", "length(replace(condition, '.', '')) ",
-                                                             "len(replace(condition, '.', '')) "), "NOT BETWEEN 3 AND 5 THEN 1
-                    WHEN condition_type = '10' AND ", ifelse(backend == "Oracle", "length(replace(condition, '.', '')) ",
-                                                             "len(replace(condition, '.', '')) "), "NOT BETWEEN 3 AND 7 THEN 1
-                    ELSE 0
+               CASE WHEN condition_type = '09' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), paste0("length(replace(", ifelse(backend == "mysql", "`condition`", "condition"), ", '.', '')) "),
+                                                             "len(replace(condition, '.', '')) "),
+                          "NOT BETWEEN 3 AND 5 THEN 1
+               WHEN condition_type = '10' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), paste0("length(replace(", ifelse(backend == "mysql", "`condition`", "condition"), ", '.', '')) "),
+                                                        "len(replace(condition, '.', '')) "), 
+                          "NOT BETWEEN 3 AND 7 THEN 1 ELSE 0
                END AS unexp_length,
                CASE WHEN condition_type = '10' AND ", ifelse(backend == "Oracle", "regexp_like(condition, '^[0-9]{{1}}') THEN 1",
-                                                             "condition LIKE '[0-9]%' THEN 1"),
+                                                             ifelse(backend == "mysql", "`condition` LIKE '[0-9]%' THEN 1", "condition LIKE '[0-9]%' THEN 1")),
                           "     ELSE 0
                END as unexp_numeric,
-               CASE WHEN condition_type = '09' AND condition IN ('000') THEN 1
-                    WHEN condition_type = '10' AND condition IN ('000', '999') THEN 1
-                    ELSE 0
+               CASE WHEN condition_type = '09' AND ", ifelse(backend == "mysql", "`condition` ", "condition "), "IN ('000') THEN 1
+               
+               
+               WHEN condition_type = '10' AND ", ifelse(backend == "mysql", "`condition` ", "condition "), "IN ('000', '999') THEN 1
+               ELSE 0
                END AS unexp_string
-            FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+               FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                           ") s1
-        ) s2
-      GROUP BY code_type
-    ) a
-  INNER JOIN (
-    SELECT
-      condition_type, count(condition) as total
-    FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+) s2
+GROUP BY code_type
+) a
+INNER JOIN (
+  SELECT
+  condition_type, count(", ifelse(backend == "mysql", "`condition`) ", "condition) "), "as total
+FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "GROUP BY condition_type
-  ) b on a.code_type = b.condition_type
-  WHERE a.code_type IN ('09', '10')
-  ", .con = conn)
+) b on a.code_type = b.condition_type
+WHERE a.code_type IN ('09', '10')
+", .con = conn)
   }
-  if (table == "PRESCRIBING" | table == "PRESCRIBING_STG") {
+  if (toupper(table) == "PRESCRIBING" | toupper(table) == "PRESCRIBING_STG") {
     sql <- glue::glue_sql("
 		      SELECT
 		        a.code_type, records, total, 100*round(records/total, 2) as pct
@@ -775,12 +874,12 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 		                                "rxnorm_cui LIKE '[a-zA-Z]%' THEN 1 "),
                           "         ELSE 0
 		            END AS unexp_alpha,
-		            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
+		            CASE WHEN ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
 		                                "len(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
                           "         ELSE 0
 		            END AS unexp_length,
 		            0 AS unexp_numeric, 0 as unexp_string
-		          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		          FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "
 				 ) s1
 			 ) s2
@@ -789,11 +888,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 		    INNER JOIN (
 		      SELECT
 		        'RX' as code_type, count(rxnorm_cui) as total
-		      FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		      FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") b ON a.code_type = b.code_type
 		    ", .con = conn)
   }
-  if (table == "DISPENSING" | table == "DISPENSING_STG") {
+  if (toupper(table) == "DISPENSING" | toupper(table) == "DISPENSING_STG") {
     sql <- glue::glue_sql("
 		      SELECT
 		        a.code_type, records, total, 100*round(records/total, 2) as pct
@@ -814,13 +913,13 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 		                                "ndc LIKE '[a-zA-Z]%' THEN 1 "),
                           "         ELSE 0
 		            END AS unexp_alpha,
-		            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(ndc, '.', '')) != 11 THEN 1",
+		            CASE WHEN ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(ndc, '.', '')) != 11 THEN 1",
 		                                "len(replace(ndc, '.', '')) != 11 THEN 1 "),
                           "         ELSE 0
 		            END AS unexp_length,
-		            '0' AS unexp_numeric,
+		            0 AS unexp_numeric,
 		            CASE WHEN ndc IN ('00000000000', '99999999999') THEN 1 ELSE 0 END as unexp_string
-		          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+		          FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                           "
 		        ) s1
 		      ) s2
@@ -829,11 +928,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 		    INNER JOIN (
 		      SELECT
 		        'NC' as code_type, count(ndc) as total
-		      FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		      FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") b on a.code_type = b.code_type
 		    ", .con = conn)
   }
-  if (table == "LAB_RESULT_CM" | table == "LAB_RESULT_CM_STG") {
+  if (toupper(table) == "LAB_RESULT_CM" | toupper(table) == "LAB_RESULT_CM_STG") {
     sql <- glue::glue_sql("
       SELECT
         a.code_type, records, total, 100*round(records/total, 2) as pct
@@ -854,16 +953,17 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                                 "lab_loinc LIKE '[a-zA-Z]%' THEN 1 "),
                           "         ELSE 0
             END AS unexp_alpha,
-            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(lab_loinc, '.', '')) NOT BETWEEN 3 AND 7 THEN 1",
+            CASE WHEN ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(lab_loinc, '.', '')) NOT BETWEEN 3 AND 7 THEN 1",
                                 "len(replace(lab_loinc, '.', '')) NOT BETWEEN 3 AND 7 THEN 1 "),
                           "         ELSE 0
             END AS unexp_length,
-            '0' AS unexp_numeric,
-            CASE WHEN ", ifelse(backend == "Oracle", "length(lab_loinc) - instr(lab_loinc, '-') != 1 THEN 1",
-                                "len(lab_loinc) - charindex(lab_loinc, '-') != 1 THEN 1"),
+            0 AS unexp_numeric,
+            CASE WHEN ", ifelse((backend == "Oracle" | backend == "mysql"), "length(lab_loinc) - instr(lab_loinc, '-') != 1 THEN 1",
+                                ifelse(backend == "postgres", "length(lab_loinc) - position('-' in lab_loinc) != 1 THEN 1",
+                                "len(lab_loinc) - charindex(lab_loinc, '-') != 1 THEN 1")),
                           "  ELSE 0
             END as unexp_string
-          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+          FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                           ") s1
       ) s2
     GROUP BY code_type
@@ -871,11 +971,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
   INNER JOIN (
   SELECT
       'LC' as code_type, count(lab_loinc) as total
-  FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+  FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") b on a.code_type = b.code_type
     ", .con = conn)
   }
-  if (table == "IMMUNIZATION" | table == "IMMUNIZATION_STG") {
+  if (toupper(table) == "IMMUNIZATION" | toupper(table) == "IMMUNIZATION_STG") {
     sql <- glue::glue_sql("
       SELECT
         a.code_type, records, total, round(100*records/total, 2) AS pct
@@ -902,11 +1002,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                           "    ELSE 0
               END AS unexp_alpha,
               CASE
-                WHEN vx_code_type = 'CH' AND ", ifelse(backend == "Oracle", "length(replace(vx_code, '.', '')) < 5 THEN 1 ",
+                WHEN vx_code_type = 'CH' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(vx_code, '.', '')) < 5 THEN 1 ",
                                                        "len(replace(vx_code, '.', '')) < 5 THEN 1 "),
-                          "    WHEN vx_code_type = 'CX' AND ", ifelse(backend == "Oracle", "length(replace(vx_code, '.', '')) NOT IN (2, 3) THEN 1 ",
+                          "    WHEN vx_code_type = 'CX' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(vx_code, '.', '')) NOT IN (2, 3) THEN 1 ",
                                                                       "len(replace(vx_code, '.', '')) NOT IN (2, 3) THEN 1 "),
-                          "    WHEN vx_code_type = 'RX' AND ", ifelse(backend == "Oracle", "length(replace(vx_code, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
+                          "    WHEN vx_code_type = 'RX' AND ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(vx_code, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
                                                                       "len(replace(vx_code, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
                           "    ELSE 0
               END AS unexp_length,
@@ -920,7 +1020,7 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
                 WHEN vx_code_type = 'CX' AND vx_code IN ('000', '999') THEN 1
                 ELSE 0
               END AS unexp_string
-            FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+            FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                           "
            WHERE vx_code_type IN ('CH', 'CX', 'RX')
 				 ) s1
@@ -932,12 +1032,12 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
     INNER JOIN (
     SELECT
       vx_code_type, count(vx_code) as total
-    FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+    FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "GROUP BY vx_code_type
     ) b on a.code_type = b.vx_code_type
     ", .con = conn)
   }
-  if (table == "PRESCRIBING" | table == "PRESCRIBING_STG") {
+  if (toupper(table) == "PRESCRIBING" | toupper(table) == "PRESCRIBING_STG") {
     sql <- glue::glue_sql("
 		      SELECT
 		        a.code_type, records, total, 100*round(records/total, 2) as pct
@@ -958,12 +1058,12 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 		                                "rxnorm_cui LIKE '[a-zA-Z]%' THEN 1 "),
                           "         ELSE 0
 		            END AS unexp_alpha,
-		            CASE WHEN ", ifelse(backend == "Oracle", "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
+		            CASE WHEN ", ifelse((backend %in% c("Oracle", "postgres", "mysql")), "length(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1",
 		                                "len(replace(rxnorm_cui, '.', '')) NOT BETWEEN 2 AND 7 THEN 1 "),
                           "         ELSE 0
 		            END AS unexp_length,
-		            '0' AS unexp_numeric, '0' as unexp_string
-		        FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		            0 AS unexp_numeric, 0 as unexp_string
+		        FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           "
 				 ) s1
 			 ) s2
@@ -972,13 +1072,11 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 		    INNER JOIN (
 		      SELECT
 		        'RX' as code_type, count(rxnorm_cui) as total
-		      FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`} ", "{`table`} "),
+		      FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`} ", "{`table`} "),
                           ") b ON a.code_type = b.code_type
 		    ", .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   return(result %>%
            mutate(text = glue::glue("{pct}% of {table} type {code_type} codes do not conform to the expected length or content."),
                   test = test,
@@ -991,21 +1089,24 @@ potential_code_error <- function(table, test, schema = NULL, backend = NULL) {
 
 primary_key_error <- function(table, field, test, schema = NULL, backend = NULL) {
   fields <- unlist(strsplit(field, split=", "))
+  if (backend == "postgres") {
+    fields <- tolower(fields)
+    table <- tolower(table)
+    schema <- tolower(schema)
+  }
   sql <- glue::glue_sql("
                         SELECT
                           COUNT(*)
                         FROM (
                           SELECT
                             {`fields`*}
-                          FROM ", ifelse(backend == "Oracle", "{`schema`}.{`table`}", "{`table`}"),
+                          FROM ", ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`table`}", "{`table`}"),
                         "
                           GROUP BY {`fields`*}
                           HAVING COUNT(*) > 1
                         ) a
                         ", .con = conn)
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   txt <- ifelse(result == 0, glue::glue("Primary key(s) {field} in {table} is/are unique."),
                 glue::glue("Primary key(s) {field} in {table} is/are not unique."))
   pass <- ifelse(result == 0, "PASS", "FAIL")
@@ -1017,21 +1118,29 @@ primary_key_error <- function(table, field, test, schema = NULL, backend = NULL)
 }
 
 replication_error <- function(original, replication, key, field, test, schema = NULL, backend = NULL) {
-  if (field == "ADMIT_DATE") {
+  if (backend == "postgres") {
+    original <- tolower(original)
+    replication <- tolower(replication)
+    key <- tolower(key)
+    field <- tolower(field)
+    schema <- tolower(schema)
+  }
+  if (toupper(field) == "ADMIT_DATE") {
     sql <- glue::glue_sql("
                         SELECT COUNT(*) FROM ",
-                          ifelse(backend == "Oracle", "{`schema`}.{`original`} a
+                          ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`original`} a
                                INNER JOIN {`schema`}.{`replication`} b ",
                                  "{`original`} a
                                INNER JOIN {`replication`} b "),
                           "on a.{`key`} = b.{`key`} ",
-                          ifelse(backend == "Oracle", "WHERE to_char(a.{`field`}, 'YYYY-MM-DD') != to_char(b.{`field`}, 'YYYY-MM-DD')",
-                                 "WHERE convert(char, a.{`field`}, 110) != convert(char, b.{`field`}, 110)"),
+                          ifelse((backend == "Oracle" | backend == "postgres"), "WHERE to_char(a.{`field`}, 'YYYY-MM-DD') != to_char(b.{`field`}, 'YYYY-MM-DD')",
+                                 ifelse(backend == "mysql", "WHERE convert(a.{`field`}, char) != convert(b.{`field`}, char)", 
+                                        "WHERE convert(char, a.{`field`}, 110) != convert(char, b.{`field`}, 110)")),
                           .con = conn)
   } else {
     sql <- glue::glue_sql("
                         SELECT COUNT(*) FROM ",
-                        ifelse(backend == "Oracle", "{`schema`}.{`original`} a
+                        ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`original`} a
                                INNER JOIN {`schema`}.{`replication`} b ",
                                "{`original`} a
                                INNER JOIN {`replication`} b "),
@@ -1039,9 +1148,7 @@ replication_error <- function(original, replication, key, field, test, schema = 
                         WHERE a.{`field`} != b.{`field`}",
                         .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   txt <- glue::glue("Field {field} from {replication} has {result} replication errors.")
   return(tibble::tibble(text = txt,
                         test = test,
@@ -1055,10 +1162,10 @@ replication_error <- function(original, replication, key, field, test, schema = 
 
 required_fields <- function(test, schema = NULL, backend = NULL, version = NULL) {
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
-    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {
     sql <- glue::glue_sql("
@@ -1075,17 +1182,31 @@ required_fields <- function(test, schema = NULL, backend = NULL, version = NULL)
                           FROM information_schema.columns
                           WHERE table_schema = 'dbo'
                           ", .con = conn)
+  } else if (backend == "postgres") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            table_name AS TABLE_NAME, column_name as COLUMN_NAME, udt_name, ordinal_position
+                          FROM information_schema.columns
+                          WHERE table_schema = {schema}
+                          ORDER BY table_name, ordinal_position asc
+                          ", .con = conn)
+  } else if (backend == "mysql") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            TABLE_NAME, COLUMN_NAME, ORDINAL_POSITION
+                          FROM information_schema.columns
+                          WHERE table_schema = {schema}
+                          ORDER BY TABLE_NAME, ORDINAL_POSITION ASC 
+                          ", .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   return(
     metadata %>%
-      anti_join(., result, by = c("Table" = "TABLE_NAME", "Field" = "COLUMN_NAME")) %>%
+      anti_join(., result %>% rename_all(.funs = list(toupper)) %>% mutate(TABLE_NAME = toupper(TABLE_NAME), COLUMN_NAME = toupper(COLUMN_NAME)), by = c("Table" = "TABLE_NAME", "Field" = "COLUMN_NAME")) %>%
       select(Table, Field, Required)  %>%
       filter(Required == "Y") %>%
       arrange(Table) %>%
-      mutate(text = glue::glue("Required field {Field} is not present."),
+      mutate(text = glue::glue("Required field {Field} in {Table} is not present."),
              test = test,
              result = ifelse(!is.na(text), "FAIL", "PASS")) %>%
       select(text, test, result)
@@ -1108,11 +1229,23 @@ required_tables <- function(test, required = NULL, schema = NULL, backend = NULL
                           FROM information_schema.tables
                           WHERE table_schema = 'dbo'
                           ", .con = conn)
+  } else if (backend == "postgres") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            relname
+                          FROM pg_stat_all_tables
+                          WHERE schemaname = {schema}
+                          ", .con = conn)
+  } else if (backend == "mysql") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            table_name
+                          FROM information_schema.tables
+                          WHERE table_schema = {schema}
+                          ", .con = conn)
   }
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
-  table_list <- result %>% pull
+  result <- run_query(conn, sql)
+  table_list <- result %>% pull %>% toupper
   schema_intersect <- length(intersect(required, table_list))
   if (n_required == schema_intersect) {
     txt <- glue::glue("All required tables are present.")
@@ -1145,9 +1278,7 @@ tables_populated <- function(test, tables = NULL, schema = NULL, backend = NULL)
                           WHERE owner = {schema}
                           AND table_name IN ({tables*})
                           ", .con = conn, tables = tables)
-    query <- DBI::dbSendQuery(conn, sql)
-    result <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+    result <- run_query(conn, sql)
     return(
       result %>%
              mutate(text = glue::glue("{TABLE_NAME} has {NUM_ROWS} rows."),
@@ -1170,9 +1301,7 @@ tables_populated <- function(test, tables = NULL, schema = NULL, backend = NULL)
                           AND o.name IN ({tables*})
                           ORDER BY o.name
                           ", .con = conn, tables = tables)
-    query <- DBI::dbSendQuery(conn, sql)
-    result <- DBI::dbFetch(query)
-    DBI::dbClearResult(query)
+    result <- run_query(conn, sql)
     return(
       result %>%
         mutate(text = glue::glue("{name} has {row_count} rows."),
@@ -1183,30 +1312,70 @@ tables_populated <- function(test, tables = NULL, schema = NULL, backend = NULL)
         select(text, test, result) %>%
         as_tibble()
     )
+  } else if (backend == "postgres") {
+    tables <- tolower(tables)
+    sql <- glue::glue_sql("
+                          SELECT
+                            relname, n_live_tup
+                          FROM pg_stat_user_tables
+                          WHERE schemaname = {schema} AND relname IN ({tables*})
+                          ", .con = conn, tables = tables)
+    result <- run_query(conn, sql)
+    return(
+      result %>%
+        mutate(text = glue::glue("{relname} has {n_live_tup} rows."),
+               test = test,
+               result = as.numeric(n_live_tup),
+               threshold = 0) %>%
+        mutate(result = ifelse(result > threshold, "PASS", "FAIL")) %>%
+        select(text, test, result) %>%
+        as_tibble()
+    )
+  } else if (backend == "mysql") {
+    sql <- glue::glue_sql("
+                          SELECT
+                            table_name, table_rows
+                          FROM information_schema.tables
+                          WHERE table_schema = {schema} AND table_name IN ({tables*})
+                          ", .con = conn, tables = tables)
+    result <- run_query(conn, sql)
+    return(
+      result %>%
+        mutate(text = glue::glue("{table_name} has {table_rows} rows."),
+               test = test,
+               result = as.numeric(table_rows),
+               threshold = 0) %>%
+        mutate(result = ifelse(result > threshold, "PASS", "FAIL")) %>%
+        select(text, test, result) %>%
+        as_tibble()
+    )
   }
 }
 
 value_validation <- function(table, field, test, schema = NULL, backend = NULL, version = NULL) {
   valueset <- get_valueset(table, field, version = version)
+  if (backend == "postgres") {
+    field <- tolower(field)
+    table <- tolower(table)
+    schema <- tolower(schema)
+  }
   sql <- glue::glue_sql("
                         SELECT SUM(CASE WHEN {`field`} NOT IN ({vals*}) THEN 1 ELSE 0 END) ",
-                        ifelse(backend == "Oracle",
+                        ifelse((backend == "Oracle" | backend == "postgres"),
                                "FROM {`schema`}.{`table`}",
                                "FROM {`table`}"),
                         vals = valueset, .con = conn)
-  query <- DBI::dbSendQuery(conn, sql)
-  result <- DBI::dbFetch(query)
-  DBI::dbClearResult(query)
+  result <- run_query(conn, sql)
   txt <- glue::glue("Field {field} from {table} has {result} invalid records")
   if (as.numeric(result) > 0 & !is.na(as.numeric(result))) {
     df <- count_distinct_invalids(table, field, test, schema = schema, backend = backend, version = version)
-    readr::write_csv(df, paste0('/app/unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
+    readr::write_csv(df, paste0('./unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
     if (field == "RESULT_UNIT" | field == "OBSCLIN_RESULT_UNIT" | field == "OBSGEN_RESULT_UNIT") {
       df %>%
         select(field) %>%
         pull %>%
         purrr::map_df(check_ucum_api) %>%
-        readr::write_csv(., paste0('/app/unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
+        readr::write_csv(., paste0('./unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
     }
   }
   return(tibble::tibble(text = txt,
@@ -1225,10 +1394,10 @@ value_validation_db <- function(table, field, test, cdm_schema = NULL, ref_schem
   } else {
     ref_table_filter <- table
   }
-  result <- {if(backend == "Oracle") tbl(conn, in_schema(cdm_schema, table)) else tbl(conn, table)} %>%
+  result <- {if(backend == "Oracle" | backend == "postgres") tbl(conn, in_schema(cdm_schema, table)) else tbl(conn, table)} %>%
     select(field) %>%
     rename(VALUESET_ITEM = field) %>%
-    anti_join({if(backend == "Oracle") tbl(conn, in_schema(ref_schema, ref_table)) else tbl(conn, ref_table)} %>%
+    anti_join({if(backend == "Oracle" | backend == "postgres") tbl(conn, in_schema(ref_schema, ref_table)) else tbl(conn, ref_table)} %>%
                 filter(TABLE_NAME == ref_table_filter & FIELD_NAME == field),
               by = "VALUESET_ITEM"
     ) %>%
@@ -1236,23 +1405,23 @@ value_validation_db <- function(table, field, test, cdm_schema = NULL, ref_schem
     count() %>%
     pull
   if (result > 0) {
-    df <- {if(backend == "Oracle") tbl(conn, in_schema(cdm_schema, table)) else tbl(conn, table)} %>%
+    df <- {if(backend == "Oracle" | backend == "postgres") tbl(conn, in_schema(cdm_schema, table)) else tbl(conn, table)} %>%
       select(field) %>%
       rename(VALUESET_ITEM = field) %>%
-      anti_join({if(backend == "Oracle") tbl(conn, in_schema(ref_schema, ref_table)) else tbl(conn, ref_table)} %>%
+      anti_join({if(backend == "Oracle" | backend == "postgres") tbl(conn, in_schema(ref_schema, ref_table)) else tbl(conn, ref_table)} %>%
                   filter(TABLE_NAME == ref_table_filter & FIELD_NAME == field),
                 by = "VALUESET_ITEM"
       ) %>%
       filter(!is.na(VALUESET_ITEM)) %>%
       group_by(VALUESET_ITEM) %>%
       count %>% arrange(-n) %>% collect %T>%
-      readr::write_csv(., paste0('/app/unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
+      readr::write_csv(., paste0('./unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
     if (field == "RESULT_UNIT" | field == "OBSCLIN_RESULT_UNIT" | field == "OBSGEN_RESULT_UNIT") {
       df %>%
         select(VALUESET_ITEM) %>%
         pull %>%
         purrr::map_df(check_ucum_api) %>%
-        readr::write_csv(., paste0('/app/unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
+        readr::write_csv(., paste0('./unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
     }
   }
   txt <- glue::glue("Field {field} from {table} has {result} invalid records")
@@ -1322,7 +1491,7 @@ perform_unit_tests <- function(table, field, test, schema = NULL, ref_schema = N
       replication_error("ENCOUNTER", table, "ENCOUNTERID", field, test = test, schema = schema, backend = backend)
     }
   } else if (test == "DC 1.11") {
-    record_duplication(table, field, test, schema = schema, backend = backend)
+    record_duplication(table, field, test, "PATID", schema = schema, backend = backend)
   } else if (test == "DC 1.12") {
     orphans(table, "PROVIDER", key = field, test = test, schema = schema, backend = backend, version = version)
   } else if (test == "DC 1.13") {
@@ -1356,7 +1525,7 @@ is.character.Date <- function(x) {
 
 summarize_distribution <- function(conn, backend, schema, table, field) {
   field <- sym(field)
-  {if(backend == "Oracle") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>%
+  {if(backend == "Oracle" | backend == "postgres") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>%
     mutate(p05 = order_by(field, quantile(field, 0.05)),
            p25 = order_by(field, quantile(field, 0.25)),
            median = order_by(field, median(field)),
@@ -1381,21 +1550,34 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
   #' field: name of column to filter over, required if filtered = TRUE
   #' value: name of value to filter in given field, required if filtered = TRUE
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG") {
-    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
+  }
+  if (backend == "postgres") {
+    schema <- tolower(schema)
+    table <- tolower(table)
+    if (filtered == TRUE) {
+      field <- tolower(field)
+      value <- tolower(value)
+    }
+    metadata <- metadata %>%
+      mutate_at(.vars = c("Table", "key", "Field"), .funs = tolower)
+  }
+  if (backend == "mysql" | backend == "postgres") {
+    return("This functionality is not currently supported on PostgreSQL or MySQL.")
   }
   # get column info to decide what queries to run
-  rs <- DBI::dbSendQuery(conn, paste0("SELECT * FROM ", ifelse(backend=="Oracle", paste0(schema, ".", table), table)))
+  rs <- DBI::dbSendQuery(conn, paste0("SELECT * FROM ", ifelse((backend=="Oracle" | backend == "postgres"), paste0(schema, ".", table), table)))
   colinfo <- DBI::dbColumnInfo(rs)
   DBI::dbClearResult(rs)
   # initiate queries on given table in schema
-  {if(backend == "Oracle") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>%
+  {if(backend == "Oracle" | backend == "postgres") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>%
     {if(filtered == TRUE) filter(., rlang::sym(field) == value) else .} %>%
-    rename_at(.vars = vars(contains("RAW")), .funs = list(~gsub("\\RAW", "R", .))) %>%
+    rename_at(.vars = vars(contains("RAW", ignore.case = T)), .funs = list(~gsub("RAW", ifelse(backend == "postgres", "r", "R"), ., ignore.case = T))) %>%
     rename_at(.vars = vars(contains("_")), .funs = list(~gsub("\\_", "", .))) %>%
-    summarize_if(is.character.Date, list(cn = ~ count(), nd = n_distinct, min = min, max = max,
+    summarize_if(is.character.Date, list(cn = ~ n(), nd = n_distinct, min = min, max = max,
                                          nNULL = ~ sum(case_when(is.na(.) ~ 1, !is.na(.) ~ 0)),
                                          nNI = ~ sum(case_when(as.character(.) %in% c('NI', 'UN', 'OT') ~ 1,
                                                                !(as.character(.) %in% c('NI', 'UN', 'OT')) ~ 0,
@@ -1403,17 +1585,17 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     mutate_all(as.character) %>%
     collect() %>%
     bind_cols(
-      {if(sum(1*(colinfo$type==6))>0)
-      {if(backend == "Oracle") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>%
-          rename_at(.vars = vars(contains("RAW")), .funs = list(~gsub("\\RAW", "R", .))) %>%
+      {if(sum(1*(colinfo$type==6 | colinfo$type=="FLOAT" | colinfo$type=="DECIMAL"))>0)
+      {if(backend == "Oracle" | backend == "postgres") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>%
+          rename_at(.vars = vars(contains("RAW", ignore.case = T)), .funs = list(~gsub("RAW", ifelse(backend == "postgres", "r", "R"), ., ignore.case = T))) %>%
           rename_at(.vars = vars(contains("_")), .funs = list(~gsub("\\_", "", .))) %>%
-          select(., -contains("DATE"), -contains("TIME")) %>%
-          summarize_if(is.numeric, list(cn = ~ count(), nNULL = ~ sum(case_when(is.na(.) ~ 1, !is.na(.) ~ 0)),
+          select(., -contains("DATE", ignore.case = T), -contains("TIME", ignore.case = T)) %>%
+          summarize_if(is.numeric, list(cn = ~ n(), nNULL = ~ sum(case_when(is.na(.) ~ 1, !is.na(.) ~ 0)),
                                         nd = n_distinct, min = min, mean = mean, max = max)) %>%
           collect() %>%
-          {if (sum(1*(colinfo$type==6))==1) rename_all(., .funs = list(~paste0(gsub("\\_", "", colinfo[colinfo$type==6,]$name), "_", .))) else . } %>%
+          {if (sum(1*(colinfo$type==6 | colinfo$type=="FLOAT" | colinfo$type=="DECIMAL"))==1) rename_all(., .funs = list(~paste0(gsub("\\_", "", colinfo[colinfo$type==6,]$name), "_", .))) else . } %>%
           bind_cols(
-            {if(backend == "Oracle") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>% select_if(is.numeric) %>% head(5) %>% collect() %>% names %>%
+            {if(backend == "Oracle" | backend == "postgres") tbl(conn, dbplyr::in_schema(schema, table)) else tbl(conn, table)} %>% select_if(is.numeric) %>% head(5) %>% collect() %>% names %>%
               map(~ summarize_distribution(conn, backend, schema, table, field = .x)) %>%
               reduce(cbind)
           ) else tibble() }
@@ -1424,7 +1606,7 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     mutate(pct_null = round(as.numeric(nNULL) / as.numeric(cn), 3) * 100,
            pct_dist = round(as.numeric(nd) / as.numeric(cn), 3) * 100,
            pct_missing = round(as.numeric(nNI) / as.numeric(cn), 3) * 100) %>%
-    left_join(., readr::read_csv('/app/inst/CDM_51_metadata.csv') %>%
+    left_join(., metadata %>%
                 filter(Table == table) %>%
                 select(key, Field:Required),
               by = 'key') %>%
@@ -1432,11 +1614,11 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     select(-key, -Order) %>%
     select(Field, Required, everything()) %T>%
     purrr::when(filtered == TRUE ~ write.csv(.,
-                                             file = paste0('/app/summaries/CSV/', table, "_", field, "_", value, '.csv'),
+                                             file = paste0('./summaries/CSV/', table, "_", field, "_", value, '.csv'),
                                              row.names = FALSE),
-                ~ write.csv(., file = paste0('/app/summaries/CSV/', table, '.csv'), row.names = FALSE)
+                ~ write.csv(., file = paste0('./summaries/CSV/', table, '.csv'), row.names = FALSE)
     ) %>%
-    purrr::when(sum(1*(colinfo$type==6))>0
+    purrr::when(sum(1*(colinfo$type==6 | colinfo$type=="FLOAT" | colinfo$type=="DECIMAL"))>0
                 ~ select(., Field, Required, cn, nd, pct_dist, nNULL, pct_null, nNI, pct_missing,
                          min, p05, p25, median, mean, p75, p95, max) %>%
                   tibble::column_to_rownames(var = "Field") %>%
@@ -1454,9 +1636,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
                   )
     ) %>%
     purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(.,
-                                                           paste0(normalizePath('/app/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
+                                                           paste0(normalizePath('./summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
                                                            selfcontained = FALSE),
-                ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/summaries/HTML'), '/', table, '.html'),
+                ~ htmlwidgets::saveWidget(., paste0(normalizePath('./summaries/HTML'), '/', table, '.html'),
                                           selfcontained = FALSE)
     )
 }
