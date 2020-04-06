@@ -323,10 +323,10 @@ extreme_values <- function(table, field, test, schema = NULL, backend = NULL, ve
 
 field_conformance <- function(test, schema = NULL, backend = NULL, version = NULL) {
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
-    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {
     sql <- glue::glue_sql("
@@ -420,16 +420,16 @@ field_conformance <- function(test, schema = NULL, backend = NULL, version = NUL
 
 get_valueset <- function(table, field, version = NULL) {
   if(version == "3.1") {
-    parseable <- readr::read_csv('./inst/CDM_31_parseable.csv')
+    parseable <- readr::read_csv('/app/inst/CDM_31_parseable.csv')
   }
   if(version == "4.1") {
-    parseable <- readr::read_csv('./inst/CDM_41_parseable.csv')
+    parseable <- readr::read_csv('/app/inst/CDM_41_parseable.csv')
   }
   if(version == "4.1_STG") {
-    parseable <- readr::read_csv('./inst/staging_parseable.csv')
+    parseable <- readr::read_csv('/app/inst/staging_parseable.csv')
   }
   if(version == "5.1" | version == "5.1_STG") {
-    parseable <- readr::read_csv('./inst/CDM_51_parseable.csv')
+    parseable <- readr::read_csv('/app/inst/CDM_51_parseable.csv')
   }
   return(parseable %>%
            filter(TABLE_NAME == table & FIELD_NAME == field) %>%
@@ -1162,10 +1162,10 @@ replication_error <- function(original, replication, key, field, test, schema = 
 
 required_fields <- function(test, schema = NULL, backend = NULL, version = NULL) {
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
-    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {
     sql <- glue::glue_sql("
@@ -1369,13 +1369,13 @@ value_validation <- function(table, field, test, schema = NULL, backend = NULL, 
   txt <- glue::glue("Field {field} from {table} has {result} invalid records")
   if (as.numeric(result) > 0 & !is.na(as.numeric(result))) {
     df <- count_distinct_invalids(table, field, test, schema = schema, backend = backend, version = version)
-    readr::write_csv(df, paste0('./unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
+    readr::write_csv(df, paste0('/app/unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
     if (field == "RESULT_UNIT" | field == "OBSCLIN_RESULT_UNIT" | field == "OBSGEN_RESULT_UNIT") {
       df %>%
         select(field) %>%
         pull %>%
         purrr::map_df(check_ucum_api) %>%
-        readr::write_csv(., paste0('./unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
+        readr::write_csv(., paste0('/app/unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
     }
   }
   return(tibble::tibble(text = txt,
@@ -1415,13 +1415,13 @@ value_validation_db <- function(table, field, test, cdm_schema = NULL, ref_schem
       filter(!is.na(VALUESET_ITEM)) %>%
       group_by(VALUESET_ITEM) %>%
       count %>% arrange(-n) %>% collect %T>%
-      readr::write_csv(., paste0('./unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
+      readr::write_csv(., paste0('/app/unit_tests/invalid_values/', field, '_', format(Sys.time(), "%m%d%Y"), '.csv'))
     if (field == "RESULT_UNIT" | field == "OBSCLIN_RESULT_UNIT" | field == "OBSGEN_RESULT_UNIT") {
       df %>%
         select(VALUESET_ITEM) %>%
         pull %>%
         purrr::map_df(check_ucum_api) %>%
-        readr::write_csv(., paste0('./unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
+        readr::write_csv(., paste0('/app/unit_tests/invalid_values/', field, '_ucum_api_', format(Sys.time(), "%m%d%Y"), '.csv'))
     }
   }
   txt <- glue::glue("Field {field} from {table} has {result} invalid records")
@@ -1550,10 +1550,10 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
   #' field: name of column to filter over, required if filtered = TRUE
   #' value: name of value to filter in given field, required if filtered = TRUE
   if (version == "4.1" | version == "4.1_STG") {
-    metadata <- readr::read_csv('./inst/CDM_41_field_names.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
   if (version == "5.1" | version == "5.1_STG") {
-    metadata <- readr::read_csv('./inst/CDM_51_metadata.csv')
+    metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   if (backend == "postgres") {
     schema <- tolower(schema)
@@ -1614,9 +1614,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
     select(-key, -Order) %>%
     select(Field, Required, everything()) %T>%
     purrr::when(filtered == TRUE ~ write.csv(.,
-                                             file = paste0('./summaries/CSV/', table, "_", field, "_", value, '.csv'),
+                                             file = paste0('/app/summaries/CSV/', table, "_", field, "_", value, '.csv'),
                                              row.names = FALSE),
-                ~ write.csv(., file = paste0('./summaries/CSV/', table, '.csv'), row.names = FALSE)
+                ~ write.csv(., file = paste0('/app/summaries/CSV/', table, '.csv'), row.names = FALSE)
     ) %>%
     purrr::when(sum(1*(colinfo$type==6 | colinfo$type=="FLOAT" | colinfo$type=="DECIMAL"))>0
                 ~ select(., Field, Required, cn, nd, pct_dist, nNULL, pct_null, nNI, pct_missing,
@@ -1636,9 +1636,9 @@ generate_summary <- function(conn, backend = NULL, version = NULL, schema = NULL
                   )
     ) %>%
     purrr::when(filtered == TRUE ~ htmlwidgets::saveWidget(.,
-                                                           paste0(normalizePath('./summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
+                                                           paste0(normalizePath('/app/summaries/HTML'), '/', table, '_', field, '_', value, '.html'),
                                                            selfcontained = FALSE),
-                ~ htmlwidgets::saveWidget(., paste0(normalizePath('./summaries/HTML'), '/', table, '.html'),
+                ~ htmlwidgets::saveWidget(., paste0(normalizePath('/app/summaries/HTML'), '/', table, '.html'),
                                           selfcontained = FALSE)
     )
 }
