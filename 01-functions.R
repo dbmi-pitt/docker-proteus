@@ -160,6 +160,11 @@ events_per_encounter <- function(table, field, vals, desc, test, schema = NULL, 
   n_field <- glue::glue("n_", tolower(field))
   field_type <- glue::glue(tolower(field), "_type")
   table <- tolower(table)
+  if (backend == "Oracle") {
+    n_field <- toupper(n_field)
+    field_type <- toupper(field_type)
+    table <- toupper(table)
+  }
   if (backend == "mysql") {
     sql <- glue::glue_sql("
                           SELECT
@@ -205,9 +210,11 @@ events_per_encounter <- function(table, field, vals, desc, test, schema = NULL, 
                         GROUP BY enc_type) a
                         FULL OUTER JOIN (
                         SELECT enc_type, COUNT(*) as n_enc ",
-                        ifelse((backend == "Oracle" | backend == "postgres"),
+                        ifelse((backend == "Oracle"),
+                               "FROM {`schema`}.ENCOUNTER ",
+                               ifelse((backend == "postgres"),
                                "FROM {`schema`}.encounter ",
-                               "FROM ENCOUNTER "),
+                               "FROM ENCOUNTER ")),
                         "GROUP BY enc_type) b
                         ON a.enc_type = b.enc_type",
                         vals = vals, .con = conn)
@@ -225,6 +232,7 @@ events_per_encounter <- function(table, field, vals, desc, test, schema = NULL, 
     )
   }
   return(result %>%
+           rename_all(., tolower) %>%
            filter(!is.na(enc_type), enc_type %in% c('AV', 'ED', 'IP', 'EI')) %>%
            mutate(ratio = round(ratio, 2),
                   text = glue::glue("Encounter type {enc_type} has {ratio} {desc} per encounter."),
@@ -466,6 +474,9 @@ orphans <- function(child, parent, key, test, schema = NULL, backend = NULL, ver
 
   if (test == "DC 1.12") {
     pk <- 'providerid'
+    if (backend == "Oracle") {
+      pk <- 'PROVIDERID'
+    }
     sql <- glue::glue_sql("
                         SELECT COUNT(DISTINCT {`key`}) FROM ",
                           ifelse((backend == "Oracle" | backend == "postgres"), "{`schema`}.{`child`} c
@@ -651,27 +662,35 @@ patients_per_encounter <- function(table, field, test, schema = NULL, backend = 
   if (version == "4.1_STG" | version == "5.1_STG" | version == "5.1_HP_STG") {
   sql <- glue::glue_sql("SELECT 100 * ROUND(({`n_field`} / n_enc), 3) as ratio FROM
                         (SELECT COUNT(DISTINCT patid) as {`n_field`}, 1 as id ",
-                          ifelse((backend == "Oracle" | backend == "postgres"),
+                          ifelse((backend == "Oracle"),
+                                 "FROM {`schema`}.{`toupper(table)`}) a ",
+                                 ifelse((backend == "postgres"),
                                  "FROM {`schema`}.{`table`}) a ",
-                                 "FROM {`toupper(table)`}) a "),
+                                 "FROM {`toupper(table)`}) a ")),
                           "LEFT JOIN
                         (SELECT COUNT(DISTINCT patid) as n_enc, 1 as id ",
-                          ifelse((backend == "Oracle" | backend == "postgres"),
+                          ifelse((backend == "Oracle"),
+                                 "FROM {`schema`}.ENCOUNTER_STG) b ",
+                                 ifelse((backend == "postgres"),
                                  "FROM {`schema`}.encounter_stg) b ",
-                                 "FROM ENCOUNTER_STG) b "),
+                                 "FROM ENCOUNTER_STG b ")),
                           "ON a.id = b.id",
                           .con = conn)
   } else {
    sql <- glue::glue_sql("SELECT 100 * ROUND(({`n_field`} / n_enc), 3) as ratio FROM
                         (SELECT COUNT(DISTINCT patid) as {`n_field`}, 1 as id ",
-                        ifelse((backend == "Oracle" | backend == "postgres"),
-                               "FROM {`schema`}.{`table`}) a ",
-                               "FROM {`toupper(table)`}) a "),
+                        ifelse((backend == "Oracle"),
+                               "FROM {`schema`}.{`toupper(table)`}) a ",
+                               ifelse((backend == "postgres"),
+                               "FROM {`schema`}.{`table`} a ",
+                               "FROM {`toupper(table)`}) a ")),
                         "LEFT JOIN
                         (SELECT COUNT(DISTINCT patid) as n_enc, 1 as id ",
-                        ifelse((backend == "Oracle" | backend == "postgres"),
+                        ifelse((backend == "Oracle"),
+                               "FROM {`schema`}.ENCOUNTER) b ",
+                               ifelse((backend == "postgres"),
                                "FROM {`schema`}.encounter) b ",
-                               "FROM ENCOUNTER) b "),
+                               "FROM ENCOUNTER) b ")),
                         "ON a.id = b.id",
                         .con = conn)
   }
@@ -1078,6 +1097,7 @@ WHERE a.code_type IN ('09', '10')
   }
   result <- run_query(conn, sql)
   return(result %>%
+           rename_all(., tolower) %>%
            mutate(text = glue::glue("{pct}% of {table} type {code_type} codes do not conform to the expected length or content."),
                   test = test,
                   result = as.numeric(pct),
