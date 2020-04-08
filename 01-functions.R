@@ -333,7 +333,7 @@ field_conformance <- function(test, schema = NULL, backend = NULL, version = NUL
   if (version == "4.1" | version == "4.1_STG") {
     metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
-  if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
+  if (version == "5.1" | version = "5.1_HP" | version == "5.1_STG" | version == "5.1_HP_STG") {
     metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {
@@ -436,7 +436,7 @@ get_valueset <- function(table, field, version = NULL) {
   if(version == "4.1_STG") {
     parseable <- readr::read_csv('/app/inst/staging_parseable.csv')
   }
-  if(version == "5.1" | version == "5.1_STG") {
+  if(version == "5.1" | version == "5.1_HP" | version == "5.1_HP_STG" | version == "5.1_STG") {
     parseable <- readr::read_csv('/app/inst/CDM_51_parseable.csv')
   }
   return(parseable %>%
@@ -1184,7 +1184,7 @@ required_fields <- function(test, schema = NULL, backend = NULL, version = NULL)
   if (version == "4.1" | version == "4.1_STG") {
     metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
-  if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
+  if (version == "5.1" | version == "5.1_HP" | version == "5.1_STG" | version == "5.1_HP_STG") {
     metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {
@@ -1467,7 +1467,7 @@ perform_unit_tests <- function(table, field, test, schema = NULL, ref_schema = N
                   'PROVIDER', 'MED_ADMIN', 'OBS_CLIN', 'OBS_GEN')
     populated <- c('DEMOGRAPHIC', 'ENROLLMENT', 'ENCOUNTER', 'DIAGNOSIS', 'PROCEDURES', 'HARVEST')
   }
-  if (version == "5.1" | version == "5.1_STG" | version == "5.1_HP_STG") {
+  if (version == "5.1" | version == "5.1_HP" | version == "5.1_STG" | version == "5.1_HP_STG") {
     required <- c('DEMOGRAPHIC', 'ENROLLMENT', 'ENCOUNTER',
       'DIAGNOSIS', 'PROCEDURES', 'VITAL', 'DISPENSING',
       'LAB_RESULT_CM', 'CONDITION', 'PRO_CM', 'PRESCRIBING',
