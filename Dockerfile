@@ -47,11 +47,9 @@ RUN set -e \
       && clir validate emayili
 
 # clone proteus and add to container
-WORKDIR /app/
-RUN git clone https://github.com/dbmi-pitt/docker-proteus /app/
 ADD .env /app/.env
-RUN set -e \
-    && mv /app/odbc.ini /etc/odbc.ini \
-    && mv /app/odbcinst.ini /etc/odbcinst.ini
+ADD *.R /app/
+ADD odbc.ini /etc/odbc.ini
+ADD odbcinst.ini /etc/odbcinst.ini
 
 CMD R -e "source('/app/04-execute.R')"
