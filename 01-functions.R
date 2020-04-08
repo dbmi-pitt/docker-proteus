@@ -333,7 +333,7 @@ field_conformance <- function(test, schema = NULL, backend = NULL, version = NUL
   if (version == "4.1" | version == "4.1_STG") {
     metadata <- readr::read_csv('/app/inst/CDM_41_field_names.csv')
   }
-  if (version == "5.1" | version = "5.1_HP" | version == "5.1_STG" | version == "5.1_HP_STG") {
+  if (version == "5.1" | version == "5.1_HP" | version == "5.1_STG" | version == "5.1_HP_STG") {
     metadata <- readr::read_csv('/app/inst/CDM_51_metadata.csv')
   }
   if (backend == "Oracle") {

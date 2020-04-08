@@ -49,6 +49,7 @@ RUN set -e \
 # clone proteus and add to container
 ADD .env /app/.env
 ADD *.R /app/
+ADD /inst/ /app/inst
 ADD odbc.ini /etc/odbc.ini
 ADD odbcinst.ini /etc/odbcinst.ini
 
